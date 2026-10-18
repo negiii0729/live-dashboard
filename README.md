@@ -50,7 +50,7 @@ python3 -m http.server
 
 `?vault=` 指向一份 `vault.json`。页面先把这个文件取下来，再显示密码框。密码用 WebCrypto 在本地派生密钥并解密，然后走和导入明文 CSV 同一条解析、计算、绘制流程。地址里同时有 `?data=` 时，仍按公开 CSV 打开，不进入密码框。
 
-密码不会放进任何请求。浏览器只请求 vault 的地址，以及可选的 `?config=`。勾选「记住密码」后，密码存在这台浏览器的 localStorage 里，刷新不用再输。点「清除数据」会删掉已导入的表，也会删掉记住的密码。
+密码不会放进任何请求。浏览器只请求 vault 的地址，以及可选的 `?config=`。勾选「记住密码」后，密码存在这台浏览器的 localStorage 里，刷新不用再输。若这份密码已经打不开当前的 vault，页面会删掉它，并重新显示密码框，说明保存的密码已经失效。点「清除数据」会删掉已导入的表，也会删掉记住的密码。
 
 这是浅防：没有账号，也没有服务器上的密码校验，拦不住反复试密码。记住的密码以明文留在本机浏览器里。
 
@@ -67,7 +67,7 @@ LIVE_PASSWORD='你的密码' python3 tools/encrypt_vault.py --csv data.csv --con
 LIVE_DASHBOARD_PASSWORD='你的密码' python3 tools/encrypt_vault.py --csv data.csv --config config.json --out vault.json --password-env LIVE_DASHBOARD_PASSWORD
 ```
 
-加密是 PBKDF2-SHA256（至少 310000 次，随机 16 字节 salt）派生 AES-256-GCM 密钥，IV 为随机 12 字节。`vault.json` 只有版本、算法、迭代次数、salt、IV 和密文。CI 不安装 `cryptography`；`tests/test_encrypt_vault.py` 在没装这个包时会跳过。
+加密是 PBKDF2-SHA256（至少 310000 次，随机 16 字节 salt）派生 AES-256-GCM 密钥，IV 为随机 12 字节。`vault.json` 只有版本、算法、迭代次数、salt、IV 和密文。环境变量名只能是大写字母、数字和下划线，且不能以数字开头。CI 会先执行 `python3 -m pip install -r tools/requirements-vault.txt`（版本钉在该文件里），再跑 `tests/test_encrypt_vault.py`，salt / IV 检查不会跳过。本机没装这个包时，那一组仍会跳过。
 
 ## 用自己的表对照数字
 
@@ -113,6 +113,6 @@ node tools/parity.mjs tests/fixtures/parity-sample.csv tests/fixtures/parity-sam
 
 ## 持续集成与部署
 
-拉取请求会运行 CI，不限目标分支：用 Python 标准库核对 vendor 文件的 sha256 是否与 `VERSIONS.md` 一致，并执行 `node --test`。
+拉取请求会运行 CI，不限目标分支：用 Python 标准库核对 vendor 文件的 sha256 是否与 `VERSIONS.md` 一致，执行 `node --test`，安装 `tools/requirements-vault.txt` 里钉住的 `cryptography`，再跑 `tests/test_encrypt_vault.py`。
 
 推送到 `main` 时，部署工作流用 GitHub 官方 Pages actions 发布静态站点。Pages 的来源需要设为 GitHub Actions，这项仓库设置由管理员处理。

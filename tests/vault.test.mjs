@@ -10,7 +10,12 @@ import {
 } from "../app/load.js";
 import { parseCsv } from "../app/parse.js";
 import { createMemoryStorage } from "../app/storage.js";
-import { decryptVault, parseVault } from "../app/vault.js";
+import {
+  STALE_REMEMBERED_PASSWORD,
+  decryptVault,
+  parseVault,
+  unlockRememberedVault,
+} from "../app/vault.js";
 
 const today = "2026-10-18";
 const password = "test-pass";
@@ -235,6 +240,62 @@ test("remembered vault password is removed by clear", () => {
   return import("../app/storage.js").then(({ createStorage }) => {
     assert.equal(createStorage(broken).readVaultPassword(), null);
   });
+});
+
+test("a remembered password that cannot decrypt is deleted", { timeout: 120_000 }, async () => {
+  const storage = createMemoryStorage();
+  const url = "tests/fixtures/vault-test.json";
+  const secret = "SECRETX";
+  storage.writeVaultPassword({ url, password: secret });
+  const failed = await unlockRememberedVault(
+    parseVault(vaultText()),
+    storage.readVaultPassword().password,
+    storage,
+    webcrypto,
+  );
+  assert.equal(failed.ok, false);
+  assert.equal(failed.message, STALE_REMEMBERED_PASSWORD);
+  assert.match(failed.message, /之前记住的密码已经打不开/);
+  assert.match(failed.message, /已从这台浏览器里删掉/);
+  assert.equal(failed.message.includes(secret), false);
+  assert.equal(storage.readVaultPassword(), null);
+
+  storage.writeVaultPassword({ url, password });
+  const opened = await unlockRememberedVault(
+    parseVault(vaultText()),
+    storage.readVaultPassword().password,
+    storage,
+    webcrypto,
+  );
+  assert.equal(opened.ok, true);
+  assert.equal(opened.opened.csv, csvText());
+  assert.equal(storage.readVaultPassword().password, password);
+});
+
+test("a remembered password stays when this browser cannot decrypt", async () => {
+  const storage = createMemoryStorage();
+  const secret = "SECRETX";
+  storage.writeVaultPassword({ url: "tests/fixtures/vault-test.json", password: secret });
+  await assert.rejects(
+    () =>
+      unlockRememberedVault(parseVault(vaultText()), storage.readVaultPassword().password, storage, {}),
+    (error) => {
+      assert.equal(error.code, "no_crypto");
+      return true;
+    },
+  );
+  assert.equal(storage.readVaultPassword().password, secret);
+});
+
+test("the page drops a remembered password that cannot open the vault", () => {
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const vault = readFileSync(new URL("../app/vault.js", import.meta.url), "utf8");
+  assert.match(html, /unlockRememberedVault\(/);
+  assert.match(html, /showPasswordForm\(\s*remembered\.message/);
+  assert.doesNotMatch(html, /unlockVault\(\s*saved\.password/);
+  assert.match(vault, /clearVaultPassword\(\)/);
+  assert.match(vault, /之前记住的密码已经打不开这份数据，已从这台浏览器里删掉/);
+  assert.equal(vault.includes("SECRETX"), false);
 });
 
 test("the page asks for a password locally and does not put it on a request", () => {

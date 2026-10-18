@@ -148,3 +148,28 @@ export async function decryptVault(vault, password, cryptoImpl) {
   }
   return readPayload(plain);
 }
+
+export const STALE_REMEMBERED_PASSWORD =
+  "之前记住的密码已经打不开这份数据，已从这台浏览器里删掉。请重新输入。";
+
+/**
+ * 用记住的密码解开 vault。密码不对时删掉保存的记录，并返回中文提示。
+ * 其他错误原样抛出，不删密码。提示里不含密码。
+ * @param {ReturnType<typeof parseVault>} vault
+ * @param {string} password
+ * @param {{ clearVaultPassword: () => void }} storage
+ * @param {Crypto} [cryptoImpl]
+ * @returns {Promise<{ ok: true, opened: { csv: string, config: object | null } } | { ok: false, message: string }>}
+ */
+export async function unlockRememberedVault(vault, password, storage, cryptoImpl) {
+  try {
+    const opened = await decryptVault(vault, password, cryptoImpl);
+    return { ok: true, opened };
+  } catch (error) {
+    if (!(error instanceof VaultError) || error.code !== "bad_password") {
+      throw error;
+    }
+    storage.clearVaultPassword();
+    return { ok: false, message: STALE_REMEMBERED_PASSWORD };
+  }
+}

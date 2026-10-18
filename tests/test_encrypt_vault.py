@@ -1,6 +1,8 @@
 """Salt and IV must change between encryptions of the same plaintext.
 
-Skipped when the cryptography package is not installed. CI does not install it.
+CI installs tools/requirements-vault.txt before this file, so the salt and IV
+tests run there. Without the cryptography package they are skipped; the CLI
+checks below still run.
 """
 
 from __future__ import annotations
@@ -8,6 +10,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -47,6 +50,16 @@ def decrypt_vault(vault: dict, password: str) -> dict:
     return json.loads(plain.decode("utf-8"))
 
 
+def run_cli(args, env=None):
+    return subprocess.run(
+        [sys.executable, str(SCRIPT), *args],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
 class EncryptVaultCliTests(unittest.TestCase):
     def test_help_uses_a_generic_csv_name(self):
         result = subprocess.run(
@@ -72,6 +85,82 @@ class EncryptVaultCliTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("不要把密码写在命令行参数里", result.stderr)
         self.assertNotIn("secret", result.stderr)
+        self.assertNotIn("secret", result.stdout)
+
+    def test_abbreviated_pass_flag_does_not_echo_secret(self):
+        secret = "SECRETX"
+        cases = (
+            ["--pass", secret, "--csv", "data.csv", "--out", "vault.json"],
+            ["--pass=" + secret, "--csv", "data.csv", "--out", "vault.json"],
+        )
+        for args in cases:
+            with self.subTest(args=args):
+                result = run_cli(args)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("不要把密码写在命令行参数里", result.stderr)
+                self.assertNotIn(secret, result.stderr)
+                self.assertNotIn(secret, result.stdout)
+
+    def test_invalid_env_name_is_not_echoed(self):
+        secret = "bad-secret"
+        result = run_cli(
+            ["--csv", "data.csv", "--out", "vault.json", "--password-env", secret],
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("环境变量名不合法", result.stderr)
+        self.assertNotIn(secret, result.stderr)
+        self.assertNotIn(secret, result.stdout)
+
+    def test_missing_env_does_not_print_secret(self):
+        secret = "SECRETX"
+        env = os.environ.copy()
+        env.pop(secret, None)
+        result = run_cli(
+            ["--csv", "data.csv", "--out", "vault.json", "--password-env", secret],
+            env=env,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("没有设置", result.stderr)
+        self.assertNotIn(secret, result.stderr)
+        self.assertNotIn(secret, result.stdout)
+
+    def test_empty_env_does_not_print_secret(self):
+        secret = "SECRETX"
+        env = os.environ.copy()
+        env[secret] = ""
+        result = run_cli(
+            ["--csv", "data.csv", "--out", "vault.json", "--password-env", secret],
+            env=env,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("是空的", result.stderr)
+        self.assertNotIn(secret, result.stderr)
+        self.assertNotIn(secret, result.stdout)
+
+    def test_invalid_iterations_do_not_echo_the_value(self):
+        secret = "SECRETX"
+        result = run_cli(["--csv", "data.csv", "--out", "vault.json", "--iterations", secret])
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn(secret, result.stderr)
+        self.assertNotIn(secret, result.stdout)
+
+    def test_password_env_option_is_not_a_password_flag(self):
+        module = load_encrypt()
+        self.assertFalse(
+            module.password_on_argv(
+                ["--password-env", "LIVE_PASSWORD", "--csv", "data.csv", "--out", "out.json"]
+            )
+        )
+        self.assertFalse(module.password_on_argv(["--password-env=LIVE_PASSWORD"]))
+        self.assertTrue(module.password_on_argv(["--pass", "SECRETX"]))
+        self.assertTrue(module.password_on_argv(["--pass=SECRETX"]))
+        self.assertIsNone(module.ENV_NAME_RE.fullmatch("bad-secret"))
+        self.assertIsNotNone(module.ENV_NAME_RE.fullmatch("LIVE_PASSWORD"))
+        self.assertIsNotNone(module.ENV_NAME_RE.fullmatch("SECRETX"))
+        with self.assertRaises(module.EncryptError) as invalid:
+            module.read_password("bad-secret")
+        self.assertEqual(str(invalid.exception), "环境变量名不合法。")
+        self.assertNotIn("bad-secret", str(invalid.exception))
 
 
 @unittest.skipUnless(cryptography_available(), "cryptography is not installed")

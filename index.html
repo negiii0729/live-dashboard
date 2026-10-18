@@ -264,7 +264,7 @@
     import { parseCsv } from "./app/parse.js";
     import { render } from "./app/render.js";
     import { createBrowserStorage, createMemoryStorage } from "./app/storage.js";
-    import { decryptVault } from "./app/vault.js";
+    import { decryptVault, unlockRememberedVault } from "./app/vault.js";
 
     const root = document.querySelector("#dashboard");
     const guide = document.querySelector("#guide");
@@ -462,7 +462,24 @@
       if (saved && saved.url === vaultDoc.url) {
         const note = root.querySelector(".boot");
         if (note) note.textContent = "正在解密…";
-        await unlockVault(saved.password, true);
+        try {
+          const remembered = await unlockRememberedVault(
+            vaultDoc.vault,
+            saved.password,
+            storage,
+            globalThis.crypto,
+          );
+          if (attempt !== vaultAttempt || !vaultDoc) return;
+          if (!remembered.ok) {
+            showPasswordForm(remembered.message, { remember: false, password: "" });
+            return;
+          }
+          presentVault(remembered.opened);
+        } catch (error) {
+          if (attempt !== vaultAttempt) return;
+          showError(messageFor(error));
+          syncChrome(null, true);
+        }
         return;
       }
       showPasswordForm(null, { remember: false, password: "" });

@@ -14,8 +14,8 @@
 
 夹具里的艺人、乐队、场馆都是虚构的。别名用例也用虚构名字，不用参考脚本里原来的别名表。
 
-`tests/fixtures/vault-source.csv` 和 `vault-source.config.json` 是另一组虚构数据。`vault-test.json` 由 `tools/encrypt_vault.py` 用密码 `test-pass` 加密这两份文件得到。Node 测试用 WebCrypto 解开，要求 CSV 字节和配置对象与源文件一致，并且 `compute()` 的结果与直接导入明文相同。错密码要走到「密码不对」。
+`tests/fixtures/vault-source.csv` 和 `vault-source.config.json` 是另一组虚构数据。`vault-test.json` 由 `tools/encrypt_vault.py` 用密码 `test-pass` 加密这两份文件得到。Node 测试用 WebCrypto 解开，要求 CSV 字节和配置对象与源文件一致，并且 `compute()` 的结果与直接导入明文相同。错密码要走到「密码不对」。记住的密码若打不开同一份 vault，要删掉保存的记录，并返回「之前记住的密码已经打不开」这段提示，提示里不能带密码本身。
 
-`tests/test_encrypt_vault.py` 用 Python 标准库的 unittest。没安装 `cryptography` 时，检查 salt / IV 的那组会跳过，帮助文本和「拒绝从命令行读密码」仍会跑。CI 不安装这个包。
+`tests/test_encrypt_vault.py` 用 Python 标准库的 unittest。没安装 `cryptography` 时，检查 salt / IV 的那组会跳过，帮助文本和命令行检查仍会跑。CI 先安装 `tools/requirements-vault.txt`，因此 salt / IV 那组会执行。`--pass` 不能当成 `--password-env`，非法的环境变量名、没设置的变量，以及参数错误，都不能把传入的值打到标准输出或标准错误。
 
 `tests/fixtures/parity-sample.csv` 和同目录的 `parity-sample.config.json` 是另一组虚构数据，专给 `tools/parity.mjs` 用。`parity-sample.golden.json` 是这份夹具在 `2026-10-18` 的完整统计，要求每个字段都相等（含 `price_total`）。`parity-sample.mismatch.json` 故意改了 `total`、`spend.东岸`、`city[0][0]`，删掉 `price_total`，并多写了 `spend_heads`，用来确认对不上时退出码为 1，并列出这些路径。
