@@ -23,6 +23,6 @@ python3 -m http.server
 
 ## 持续集成与部署
 
-目标分支为 `main` 的拉取请求会运行 CI：用 Python 标准库核对 vendor 文件的 sha256 是否与 `VERSIONS.md` 一致，并执行 `node --test`。
+拉取请求会运行 CI，不限目标分支：用 Python 标准库核对 vendor 文件的 sha256 是否与 `VERSIONS.md` 一致，并执行 `node --test`。
 
 推送到 `main` 时，部署工作流用 GitHub 官方 Pages actions 发布静态站点。Pages 的来源需要设为 GitHub Actions，这项仓库设置由管理员处理。

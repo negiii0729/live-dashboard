@@ -1,0 +1,5 @@
+date,event,artist,venue,city,type,price,region,no
+2024-04-01,Solo Night,Northwind,Blue Hall,Lumen Bay,solo,180,East,7
+2024-04-02,Free Night,Paper Moon,Cedar Room,Westport,fest,,East,8
+2024-04-03,Unknown Price,Glass Harbor,Blue Hall,Lumen Bay,solo,免费,East,9
+2024-04-04,Zero Price,Lantern Club,Blue Hall,Lumen Bay,solo,0,East,10

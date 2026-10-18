@@ -1,0 +1,2 @@
+tests/fixtures/artists-multiline.csv text eol=crlf
+tests/fixtures/bom-crlf-upper.csv text eol=crlf
