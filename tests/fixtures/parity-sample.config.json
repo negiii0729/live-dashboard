@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "title": "虚构对照样本",
+  "people": [
+    { "column": "ada", "label": "Ada" },
+    { "column": "bao", "label": "Bao" }
+  ],
+  "price_mode": "per_person",
+  "currency": "CNY",
+  "default_region": "雾湾",
+  "artist_aliases": { "Paper Lantern": "纸灯" }
+}

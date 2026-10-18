@@ -54,7 +54,29 @@ python3 -m http.server
 node tools/preview_text.mjs /绝对路径/你的表.csv --today 2026-10-18
 ```
 
-终端打印的 KPI、图表数字、筛选项和表格，与页面使用同一套函数。票价那一格是取整后的显示，72533 会印成 ¥72,533，并带「N 场无票价未计」。没取整的 `price_total` 用 `node tools/parity.mjs` 看。`--today` 要和对照用的截止日期相同。`--config config.json` 可选。不要把合计和按地区取整后再加总的旧数字混在一起。
+终端打印的 KPI、图表数字、筛选项和表格，与页面使用同一套函数。票价那一格是取整后的显示，72533 会印成 ¥72,533，并带「N 场无票价未计」。`--today` 要和对照用的截止日期相同。`--config config.json` 可选。合计对着没取整的 `price_total` 看；按地区取整后再加总是另一套旧口径。
+
+没取整的统计 JSON 用 `tools/parity.mjs`。不带 golden 时，JSON 打到标准输出，原来的旗标仍然可用：
+
+```bash
+node tools/parity.mjs /绝对路径/你的表.csv --today 2026-10-18
+node tools/parity.mjs /绝对路径/你的表.csv --today 2026-10-18 --config /绝对路径/config.json
+node tools/parity.mjs <csv> <config> <today>
+```
+
+和 golden 逐字段对照时，用设计 §6 / §8 的位置参数（第 4 个是 golden 文件）：
+
+```bash
+node tools/parity.mjs <csv> <config> <today> <golden.json>
+```
+
+每个字段都一致时退出码为 0，标准输出写「与 golden 一致」。有差异时退出码为 1，标准错误列出不一致的键路径（例如 `total`、`spend.东岸`、`city[0][0]`）。`--golden golden.json` 与第 4 个位置参数作用相同。仓库里的虚构样本可以这样跑：
+
+```bash
+node tools/parity.mjs tests/fixtures/parity-sample.csv tests/fixtures/parity-sample.config.json 2026-10-18 tests/fixtures/parity-sample.golden.json
+```
+
+真实观演表不要提交进这个仓库。
 
 ## 第三方库
 
