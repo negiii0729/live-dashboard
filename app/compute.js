@@ -122,7 +122,7 @@ export function compute(parsed, todayOrOptions = {}) {
     typeof todayOrOptions === "string" ? { today: todayOrOptions } : todayOrOptions ?? {};
   const today = resolveToday(options.today);
   const config = parsed.config ?? {};
-  const priceMode = config.priceMode ?? "total";
+  const priceMode = config.priceMode == null || config.priceMode === "" ? "total" : config.priceMode;
   if (priceMode !== "total" && priceMode !== "per_person") {
     throw new Error(`未知的 price_mode「${priceMode}」，只接受 total 或 per_person`);
   }
@@ -230,6 +230,7 @@ export function compute(parsed, todayOrOptions = {}) {
 
   result.spend = roundedMap(spend);
   result.spend_n = objectFromMap(spendN);
+  // 保留原始合计。页面显示另按四舍五入取整到元，不在这里改数字。
   result.price_total = priceTotal;
   result.no_price = noPrice;
   result.upcoming = upcoming.length;
