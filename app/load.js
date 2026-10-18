@@ -3,7 +3,9 @@
  * loadDashboard 的优先级：?data= ，?fixture= ，浏览器里保存的导入，内置示例。
  * ?vault= 不在 loadDashboard 里解密。页面用 fetchVaultDocument 取 vault.json，
  * 再在本地解开。地址里同时有 ?data= 和 ?vault= 时，仍走 ?data=。
- * ?config= 和 ?today= 套在选中的表上。示例与否只看数据来源，不另设开关。
+ * ?config= 和 ?today= 套在选中的表上，本地导入也先读 ?config=。
+ * 示例与否只看数据来源：只有落到内置示例才标成示例。
+ * 同源相对路径的 ?data= 不是夹具，也不标成示例。
  */
 
 import { ParseError, normalizeConfig, parseDate } from "./schema.js";
@@ -234,6 +236,74 @@ function pack(source, fields) {
 }
 
 /**
+ * 页面顶栏怎么称呼这次的数据。
+ * 只有 source 为 sample 时才说这是示例，并显示示例说明。
+ * 相对路径的 ?data=（source 为 data）和远程 ?data= 用同一句，不叫夹具。
+ * 没有载入成功时不提示例。
+ */
+export function describeLoadedSource(loaded) {
+  if (loaded?.source === "import") {
+    return {
+      sample: false,
+      showGuide: false,
+      label: loaded.name
+        ? `已导入 ${loaded.name}，保存在这台浏览器里。`
+        : "已导入的表格保存在这台浏览器里。",
+    };
+  }
+  if (loaded?.source === "remote" || loaded?.source === "data") {
+    return {
+      sample: false,
+      showGuide: false,
+      label: "当前数据来自 ?data= 链接。",
+    };
+  }
+  if (loaded?.source === "fixture") {
+    return {
+      sample: false,
+      showGuide: false,
+      label: "当前数据来自本站夹具。",
+    };
+  }
+  if (loaded?.source === "sample") {
+    return {
+      sample: true,
+      showGuide: true,
+      label: "当前是内置示例。也可以把 CSV 或 Excel 拖进页面。",
+    };
+  }
+  return {
+    sample: false,
+    showGuide: false,
+    label: "没有把表格载入页面。也可以把 CSV 或 Excel 拖进页面。",
+  };
+}
+
+/**
+ * 读取地址里的 ?config=。没有这项时返回 null。
+ * 地址规则、跨域提示和 JSON 校验与 loadDashboard 里的 ?config= 相同。
+ */
+export async function loadQueryConfig(options = {}) {
+  const params = new URLSearchParams(String(options.search ?? "").replace(/^\?/, ""));
+  if (!params.has("config")) return null;
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const target = resolveResource(params.get("config"), "config");
+  return parseConfigText(await fetchText(fetchImpl, target, "config"));
+}
+
+/**
+ * 本地导入成功后，地址里去掉 ?data=、?fixture=、?vault=，留下 ?config= 和 ?today=。
+ */
+export function searchAfterImport(search) {
+  const params = new URLSearchParams(String(search ?? "").replace(/^\?/, ""));
+  params.delete("data");
+  params.delete("fixture");
+  params.delete("vault");
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
+
+/**
  * @param {{
  *   search?: string,
  *   fetch?: typeof fetch,
@@ -260,7 +330,7 @@ export async function loadDashboard(options = {}) {
   if (params.has("data")) {
     const target = resolveResource(params.get("data"), "data");
     const csv = await fetchText(fetchImpl, target, "data");
-    return pack(target.remote ? "remote" : "fixture", {
+    return pack(target.remote ? "remote" : "data", {
       csv,
       config,
       today,

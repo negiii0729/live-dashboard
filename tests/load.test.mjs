@@ -6,9 +6,12 @@ import { kpiCards } from "../app/render.js";
 import {
   LoadError,
   csvFileNameOk,
+  describeLoadedSource,
   loadDashboard,
+  loadQueryConfig,
   messageFor,
   resolveResource,
+  searchAfterImport,
 } from "../app/load.js";
 import { parseCsv } from "../app/parse.js";
 import { ParseError } from "../app/schema.js";
@@ -121,8 +124,13 @@ test("?data= beats a saved import, and a relative path is not the example", asyn
       return ok(sampleCsv());
     },
   });
-  assert.equal(relative.source, "fixture");
+  assert.equal(relative.source, "data");
   assert.equal(relative.sample, false);
+  const notice = describeLoadedSource(relative);
+  assert.equal(notice.showGuide, false);
+  assert.equal(notice.sample, false);
+  assert.equal(notice.label, "当前数据来自 ?data= 链接。");
+  assert.doesNotMatch(notice.label, /夹具|虚构|示例/);
 });
 
 test("?fixture= overrides a saved import and still rejects a remote path", async () => {
@@ -345,6 +353,126 @@ test("?config= applies price_mode and currency to the fictional sample", async (
       return true;
     },
   );
+});
+
+test("a failed load is not described as a fictional sample", () => {
+  const failed = describeLoadedSource(null);
+  assert.equal(failed.showGuide, false);
+  assert.equal(failed.sample, false);
+  assert.doesNotMatch(failed.label, /虚构示例|下面是一份/);
+
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const showError = html.slice(html.indexOf("function showError"), html.indexOf("function syncChrome"));
+  assert.match(showError, /guide\.hidden = true/);
+  assert.doesNotMatch(showError, /虚构示例/);
+  assert.doesNotMatch(html, /guide\.hidden = false/);
+
+  const sample = describeLoadedSource({ source: "sample", sample: true });
+  assert.equal(sample.showGuide, true);
+  assert.match(sample.label, /内置示例/);
+  const fixture = describeLoadedSource({ source: "fixture", sample: false });
+  assert.match(fixture.label, /夹具/);
+  assert.equal(fixture.showGuide, false);
+});
+
+test("a relative ?data= 404 is not called a fixture", async () => {
+  await assert.rejects(
+    () =>
+      loadDashboard({
+        search: "?data=examples/missing.csv",
+        storage: createMemoryStorage(),
+        fetch: async () => ({ ok: false, status: 404, text: async () => "" }),
+      }),
+    (error) => {
+      assert.match(error.message, /没有找到这份数据/);
+      assert.doesNotMatch(error.message, /夹具|虚构示例/);
+      return true;
+    },
+  );
+});
+
+test("a local import with ?config= loads that config for validation and for the saved view", async () => {
+  const csv = [
+    "date,event,artist,price,alice,bob",
+    "2024-01-01,Show,Copper Kite,100,✅,✅",
+    "2024-02-01,Show,Kite,50,✅,",
+  ].join("\n");
+  const config = JSON.stringify({
+    schema: 1,
+    title: "Imported Desk",
+    price_mode: "per_person",
+    currency: "USD",
+    artist_aliases: { Kite: "Copper Kite" },
+    people: [{ column: "alice", label: "Alice" }, { column: "bob", label: "Bob" }],
+  });
+  const search = "?data=https://example.com/old.csv&config=https://example.com/config.json&today=2026-10-18";
+  const fetched = [];
+  const fetchConfig = async (url) => {
+    fetched.push(String(url));
+    assert.match(String(url), /config\.json$/);
+    return ok(config);
+  };
+
+  const loadedConfig = await loadQueryConfig({ search, fetch: fetchConfig });
+  const checked = parseCsv(csv, loadedConfig);
+  assert.equal(checked.config.priceMode, "per_person");
+  assert.equal(checked.config.currency, "USD");
+  assert.equal(checked.config.title, "Imported Desk");
+  assert.deepEqual(
+    checked.participants.map((person) => person.label),
+    ["Alice", "Bob"],
+  );
+
+  const strict = await loadQueryConfig({
+    search: "?config=https://example.com/strict.json",
+    fetch: async () =>
+      ok(JSON.stringify({ people: [{ column: "zoe", label: "Zoe" }] })),
+  });
+  assert.throws(
+    () => parseCsv(csv, strict),
+    (error) => {
+      const text = messageFor(error);
+      assert.match(text, /配置没有通过校验/);
+      assert.match(text, /zoe/);
+      return true;
+    },
+  );
+
+  const storage = createMemoryStorage();
+  storage.write({ csv, name: "local.csv" });
+  const next = searchAfterImport(search);
+  assert.doesNotMatch(next, /(?:^|[?&])data=/);
+  assert.doesNotMatch(next, /fixture=/);
+  assert.doesNotMatch(next, /vault=/);
+  assert.match(next, /config=/);
+  assert.match(next, /today=2026-10-18/);
+
+  const viewed = await loadDashboard({
+    search: next,
+    storage,
+    fetch: fetchConfig,
+  });
+  assert.equal(viewed.source, "import");
+  assert.equal(viewed.sample, false);
+  assert.equal(viewed.name, "local.csv");
+  const parsed = parseCsv(viewed.csv, viewed.config);
+  const stats = compute(parsed, viewed.today);
+  assert.equal(stats.unique_artists, 1);
+  assert.equal(stats.price_total, 250);
+  const price = kpiCards(stats, parsed.participants, { currency: parsed.config.currency }).find(
+    (card) => card.key === "price",
+  );
+  assert.equal(price.value, "$250");
+  assert.equal(describeLoadedSource(viewed).showGuide, false);
+  assert.doesNotMatch(describeLoadedSource(viewed).label, /夹具|虚构|示例/);
+  assert.ok(fetched.length >= 2);
+
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+  const importFn = html.slice(html.indexOf("async function importFile"), html.indexOf("pickButton.addEventListener"));
+  assert.match(importFn, /loadQueryConfig/);
+  assert.match(importFn, /params\.has\("config"\)/);
+  assert.match(importFn, /parseCsv\(csv, config\)/);
+  assert.match(importFn, /searchAfterImport|rememberImport/);
 });
 
 test("csv file names and the loading sources stay generic", () => {
