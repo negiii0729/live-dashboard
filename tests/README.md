@@ -13,3 +13,5 @@
 `tests/fixtures/compute-three.csv` 是另一份虚构数据，有三列参与者，用来测「一起」（三人都到场）和「仅某人」。参考脚本不能算三个人，所以这份不产生 golden。
 
 夹具里的艺人、乐队、场馆都是虚构的。别名用例也用虚构名字，不用参考脚本里原来的别名表。
+
+`tests/fixtures/parity-sample.csv` 和同目录的 `parity-sample.config.json` 是另一组虚构数据，专给 `tools/parity.mjs` 用。`parity-sample.golden.json` 是这份夹具在 `2026-10-18` 的完整统计，要求每个字段都相等（含 `price_total`）。`parity-sample.mismatch.json` 故意改了 `total`、`spend.东岸`、`city[0][0]`，删掉 `price_total`，并多写了 `spend_heads`，用来确认对不上时退出码为 1，并列出这些路径。
