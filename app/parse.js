@@ -48,15 +48,52 @@ function stripBom(text) {
   return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
 }
 
-function cell(record, field) {
-  if (!field) return "";
-  const value = record[field];
+/**
+ * 每条 CSV 记录的起始物理行（从 1 计）。
+ * 引号内的换行只增加行号，不新开一条记录。
+ * 文件以换行结束时，补上 PapaParse 会保留的那条空记录，方便逐条对齐。
+ */
+function recordStartLines(text) {
+  const starts = [];
+  if (text.length === 0) return starts;
+  let line = 1;
+  let inQuotes = false;
+  let atRecordStart = true;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (atRecordStart) {
+      starts.push(line);
+      atRecordStart = false;
+    }
+    if (ch === '"') {
+      if (inQuotes && text[i + 1] === '"') i += 1;
+      else inQuotes = !inQuotes;
+      continue;
+    }
+    if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i += 1;
+      line += 1;
+      if (!inQuotes) atRecordStart = true;
+    }
+  }
+  if (atRecordStart) starts.push(line);
+  return starts;
+}
+
+function greedyEmpty(fields) {
+  return fields.map((field) => (field == null ? "" : String(field))).join("").trim() === "";
+}
+
+function fieldText(fields, index) {
+  if (index == null || index >= fields.length) return "";
+  const value = fields[index];
   return value == null ? "" : String(value);
 }
 
 /**
  * 解析一份观演 CSV。
- * 行号按记录计：表头是第 1 行，引号单元格里的换行仍算同一行。
+ * 能和 PapaParse 的记录边界对齐时，错误里的行号是该记录在文件中的起始物理行；
+ * 对不齐时改称「第 N 条记录」。
  *
  * @param {string} text UTF-8 文本，可以带 BOM
  * @param {object} [configInput] config.json 的对象。别名读 artist_aliases 或 aliases
@@ -79,53 +116,57 @@ export function parseCsv(text, configInput) {
   }
 
   const parsed = loadPapa().parse(source, {
-    header: true,
-    skipEmptyLines: "greedy",
+    header: false,
+    skipEmptyLines: false,
     delimiter: ",",
-    transformHeader(header) {
-      return String(header).replace(/^\uFEFF/, "").trim();
-    },
+  });
+  const starts = recordStartLines(source);
+  const physical = parsed.data.length === starts.length;
+  const unit = physical ? "line" : "record";
+  const kept = [];
+  parsed.data.forEach((fields, index) => {
+    if (greedyEmpty(fields)) return;
+    kept.push({
+      fields,
+      line: physical ? starts[index] : kept.length + 1,
+    });
   });
 
-  const fields = parsed.meta?.fields ?? [];
-  const renamedHeaders = parsed.meta?.renamedHeaders ?? null;
-  const errors = [];
-  const renamedFields = new Set();
-  if (renamedHeaders) {
-    for (const [renamed, original] of Object.entries(renamedHeaders)) {
-      renamedFields.add(renamed);
-      errors.push({
-        line: 1,
-        code: "duplicate_column",
-        message: `重复的列「${original}」`,
-      });
-    }
+  if (kept.length === 0) {
+    throw new ParseError([
+      { line: 1, unit, code: "empty", message: "CSV 没有表头" },
+    ]);
   }
 
-  const classified = classifyHeaders(
-    fields.filter((field) => !renamedFields.has(field)),
-    config.people,
+  const header = kept[0];
+  const headerFields = header.fields.map((field) =>
+    String(field ?? "").replace(/^\uFEFF/, "").trim(),
   );
-  errors.push(...classified.errors);
+  const classified = classifyHeaders(headerFields, config.people, header.line, unit);
+  const errors = classified.errors.slice();
 
-  const fieldByKey = new Map();
+  const indexByKey = new Map();
   for (const column of classified.columns) {
-    if (!fieldByKey.has(column.key)) fieldByKey.set(column.key, column.field);
+    if (!indexByKey.has(column.key)) {
+      indexByKey.set(column.key, headerFields.indexOf(column.field));
+    }
   }
 
   const rows = [];
   const aliases = config.artistAliases;
-  parsed.data.forEach((record, index) => {
-    const line = index + 2;
-    const read = (key) => cell(record, fieldByKey.get(key));
+  for (let index = 1; index < kept.length; index++) {
+    const record = kept[index];
+    const line = physical ? record.line : index + 1;
+    const read = (key) => fieldText(record.fields, indexByKey.get(key));
 
     let date = null;
-    if (fieldByKey.has("date")) {
+    if (indexByKey.has("date")) {
       const rawDate = read("date");
       const checked = parseDate(rawDate);
       if (!checked.ok) {
         errors.push({
           line,
+          unit,
           code: "bad_date",
           message: `日期「${rawDate.trim()}」不是 YYYY-MM-DD`,
         });
@@ -156,7 +197,7 @@ export function parseCsv(text, configInput) {
       region: read("region").trim(),
       attended,
     });
-  });
+  }
 
   if (errors.length > 0) throw new ParseError(errors);
   return {

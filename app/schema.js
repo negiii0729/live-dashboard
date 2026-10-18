@@ -9,6 +9,7 @@ export class ParseError extends Error {
       line: error.line ?? null,
       code: error.code || "invalid",
       message: error.message,
+      unit: error.unit === "record" ? "record" : "line",
     }));
     super(list.map(formatParseError).join("\n"));
     this.name = "ParseError";
@@ -18,10 +19,9 @@ export class ParseError extends Error {
 }
 
 function formatParseError(error) {
-  if (typeof error.line === "number") {
-    return `第 ${error.line} 行：${error.message}`;
-  }
-  return error.message;
+  if (typeof error.line !== "number") return error.message;
+  const unit = error.unit === "record" ? "条记录" : "行";
+  return `第 ${error.line} ${unit}：${error.message}`;
 }
 
 export const RESERVED_COLUMNS = Object.freeze([
@@ -52,14 +52,13 @@ export const ATTENDED_VALUES = Object.freeze([
 
 const ATTENDED = new Set(ATTENDED_VALUES);
 
-const LEADING_SLASH = new Set(["/", "\uFF0F"]);
-
 export function headerLabel(header) {
   return String(header ?? "").replace(/^\uFEFF/, "").trim();
 }
 
+/** trim、小写，再去掉末尾连续的 '.'。`NO.` 和 `DATE.` 因此对应保留列 no、date。 */
 export function headerKey(header) {
-  return headerLabel(header).toLowerCase();
+  return headerLabel(header).toLowerCase().replace(/\.+$/, "");
 }
 
 export function isAttended(value) {
@@ -100,7 +99,7 @@ export function parsePrice(value) {
 
 /**
  * 与参考 split_artists 一致：去掉 \r，按 \n 拆行；
- * 每行 strip，再去掉一个开头的 "/" 或 "／"，再 strip；空行丢弃。
+ * 每行 strip，再用 lstrip("/／") 去掉开头连续的 "/" 和 "／"，再 strip；空行丢弃。
  * 别名只写入 counted，raw 保持拆分后的原文。
  * @param {string} text
  * @param {Record<string, string>} [aliases]
@@ -110,7 +109,7 @@ export function splitArtists(text, aliases = {}) {
   const raw = [];
   for (const part of String(text ?? "").replaceAll("\r", "").split("\n")) {
     let line = part.trim();
-    if (LEADING_SLASH.has(line[0])) line = line.slice(1);
+    line = line.replace(/^[\/／]+/, "");
     line = line.trim();
     if (line) raw.push(line);
   }
@@ -220,21 +219,24 @@ export function normalizeConfig(input = {}) {
 }
 
 /**
- * @param {string[]} fields PapaParse 给出的表头（已去掉首尾空白）
+ * @param {string[]} fields 表头原文
  * @param {{ column: string, label: string | null }[] | null} people
+ * @param {number} [headerLine] 表头所在的物理行；对不齐时用记录序号
+ * @param {"line" | "record"} [unit]
  */
-export function classifyHeaders(fields, people) {
+export function classifyHeaders(fields, people, headerLine = 1, unit = "line") {
   const errors = [];
   const seen = new Set();
   const columns = [];
 
   for (const field of fields) {
     const label = headerLabel(field);
-    const key = label.toLowerCase();
+    const key = headerKey(field);
     if (!key) continue;
     if (seen.has(key)) {
       errors.push({
-        line: 1,
+        line: headerLine,
+        unit,
         code: "duplicate_column",
         message: `重复的列「${label}」`,
       });
@@ -251,7 +253,8 @@ export function classifyHeaders(fields, people) {
 
   if (!seen.has("event") && !seen.has("artist")) {
     errors.push({
-      line: 1,
+      line: headerLine,
+      unit,
       code: "missing_event_artist",
       message: "缺少 event 和 artist 列，至少要有其中一列",
     });
@@ -261,7 +264,7 @@ export function classifyHeaders(fields, people) {
     .filter((column) => column.participant)
     .map((column) => ({ column: column.key, label: column.label }));
 
-  const resolved = resolveParticipants(headerParticipants, people);
+  const resolved = resolveParticipants(headerParticipants, people, headerLine, unit);
   return {
     columns,
     participants: resolved.participants,
@@ -269,7 +272,7 @@ export function classifyHeaders(fields, people) {
   };
 }
 
-function resolveParticipants(headerParticipants, people) {
+function resolveParticipants(headerParticipants, people, headerLine, unit) {
   if (!people || people.length === 0) {
     return { participants: headerParticipants, errors: [] };
   }
@@ -286,7 +289,8 @@ function resolveParticipants(headerParticipants, people) {
     const found = byKey.get(key);
     if (!found) {
       errors.push({
-        line: 1,
+        line: headerLine,
+        unit,
         code: "unknown_participant",
         message: `配置的参与者列「${person.column}」不是表里的参与者列`,
       });
@@ -294,7 +298,8 @@ function resolveParticipants(headerParticipants, people) {
     }
     if (used.has(key)) {
       errors.push({
-        line: 1,
+        line: headerLine,
+        unit,
         code: "duplicate_participant",
         message: `配置的参与者列「${person.column}」重复了`,
       });

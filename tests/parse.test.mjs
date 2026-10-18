@@ -50,8 +50,9 @@ test("splitArtists follows the line, slash, blank, and alias rules", () => {
   ]);
 
   assert.deepEqual(splitArtists("A\rB").raw, ["AB"]);
-  assert.deepEqual(splitArtists("//Copper Kite").raw, ["/Copper Kite"]);
-  assert.deepEqual(splitArtists("/\uFF0FCopper Kite").raw, ["\uFF0FCopper Kite"]);
+  assert.deepEqual(splitArtists("//A").raw, ["A"]);
+  assert.deepEqual(splitArtists("／／A").raw, ["A"]);
+  assert.deepEqual(splitArtists("/／A").raw, ["A"]);
   assert.deepEqual(splitArtists("North/Wind").raw, ["North/Wind"]);
   assert.deepEqual(splitArtists("Copper Kite\nCopper Kite").raw, [
     "Copper Kite",
@@ -128,7 +129,7 @@ test("BOM, CRLF, and uppercase headers parse", () => {
   assert.deepEqual(result.participants, []);
 });
 
-test("a bad date reports the record line number", () => {
+test("a bad date reports the physical file line", () => {
   const lines = fixture("bad-date.csv").split("\n");
   assert.match(lines[2], /2024\/03\/01/);
   assert.match(lines[3], /2023-02-29/);
@@ -152,13 +153,62 @@ test("a bad date reports the record line number", () => {
   );
 });
 
-test("a bad date after a quoted newline uses the record number, with the header as line 1", () => {
+test("a bad date after a quoted newline uses the physical file line", () => {
   const csv = 'event,date,artist\n"Harbor\nNight",2024-01-01,Northwind\nCedar Room,2024/02/02,Paper Moon\n';
   assert.throws(
     () => parseCsv(csv),
     (error) => {
-      assert.equal(error.line, 3);
-      assert.match(error.message, /第 3 行：日期「2024\/02\/02」/);
+      assert.equal(error.line, 4);
+      assert.match(error.message, /第 4 行：日期「2024\/02\/02」/);
+      assert.equal(error.errors[0].unit, "line");
+      return true;
+    },
+  );
+
+  const crlf = 'event,date\r\n"Harbor\r\nNight",2024-01-01\r\nLater,2024/03/03\r\n';
+  assert.throws(
+    () => parseCsv(crlf),
+    (error) => {
+      assert.equal(error.line, 4);
+      assert.match(error.message, /第 4 行/);
+      return true;
+    },
+  );
+
+  const blank = "event,date\nShow,2024-01-01\n\nLater,2024/02/02\n";
+  assert.throws(
+    () => parseCsv(blank),
+    (error) => {
+      assert.equal(error.line, 4);
+      assert.match(error.message, /第 4 行：日期「2024\/02\/02」/);
+      return true;
+    },
+  );
+});
+
+test("a trailing dot is removed from headers after trim and lowercase", () => {
+  const result = parseCsv(
+    "NO.,DATE,EVENT,ARTIST,VENUE.,mika\n12,2024-06-01,Harbor Night,Northwind,Blue Hall,yes\n",
+  );
+  assert.deepEqual(result.participants, [{ column: "mika", label: "mika" }]);
+  assert.equal(result.rows[0].no, "12");
+  assert.equal(result.rows[0].date, "2024-06-01");
+  assert.equal(result.rows[0].event, "Harbor Night");
+  assert.equal(result.rows[0].venue, "Blue Hall");
+  assert.deepEqual(result.rows[0].artists, ["Northwind"]);
+  assert.deepEqual(attendedOf(result.rows[0]), { mika: true });
+
+  const spaced = parseCsv(" NO. , DATE. , EVENT , artist , sora \n3,2024-07-01,Show,Copper Kite,1\n");
+  assert.deepEqual(spaced.participants, [{ column: "sora", label: "sora" }]);
+  assert.equal(spaced.rows[0].no, "3");
+  assert.equal(spaced.rows[0].date, "2024-07-01");
+
+  assert.throws(
+    () => parseCsv("DATE.,EVENT\nnot-a-date,Show\n"),
+    (error) => {
+      assert.equal(error.line, 2);
+      assert.match(error.message, /第 2 行/);
+      assert.match(error.message, /not-a-date/);
       return true;
     },
   );
