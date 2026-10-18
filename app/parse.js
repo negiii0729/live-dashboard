@@ -80,6 +80,57 @@ function recordStartLines(text) {
   return starts;
 }
 
+/**
+ * index 指向引号出问题的字符时，返回它所在记录的起始物理行。
+ * 扫描停在该字符之前，所以报的是记录开头，不是引号那一行本身（两者不同时）。
+ */
+function recordStartLineAt(text, index) {
+  let line = 1;
+  let recordLine = 1;
+  let inQuotes = false;
+  let atRecordStart = true;
+  const end = Math.min(Math.max(index, 0), text.length);
+  for (let i = 0; i < end; i++) {
+    const ch = text[i];
+    if (atRecordStart) {
+      recordLine = line;
+      atRecordStart = false;
+    }
+    if (ch === '"') {
+      if (inQuotes && text[i + 1] === '"') i += 1;
+      else inQuotes = !inQuotes;
+      continue;
+    }
+    if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i += 1;
+      line += 1;
+      if (!inQuotes) atRecordStart = true;
+    }
+  }
+  if (atRecordStart) recordLine = line;
+  return recordLine;
+}
+
+function unclosedQuoteErrors(source, papaErrors, starts) {
+  const errors = [];
+  const seen = new Set();
+  for (const error of papaErrors ?? []) {
+    if (error?.code !== "MissingQuotes" && error?.code !== "InvalidQuotes") continue;
+    let line = null;
+    if (typeof error.index === "number") line = recordStartLineAt(source, error.index);
+    else if (typeof error.row === "number" && starts[error.row] != null) line = starts[error.row];
+    if (seen.has(line)) continue;
+    seen.add(line);
+    errors.push({
+      line,
+      unit: "line",
+      code: "unclosed_quote",
+      message: "引号没有闭合，这一行之后的内容不能再分成新的记录",
+    });
+  }
+  return errors;
+}
+
 function greedyEmpty(fields) {
   return fields.map((field) => (field == null ? "" : String(field))).join("").trim() === "";
 }
@@ -121,6 +172,8 @@ export function parseCsv(text, configInput) {
     delimiter: ",",
   });
   const starts = recordStartLines(source);
+  const quotes = unclosedQuoteErrors(source, parsed.errors, starts);
+  if (quotes.length > 0) throw new ParseError(quotes);
   const physical = parsed.data.length === starts.length;
   const unit = physical ? "line" : "record";
   const kept = [];

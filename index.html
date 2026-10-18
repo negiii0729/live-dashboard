@@ -55,6 +55,7 @@
       border: 1px solid var(--line);
       border-radius: 14px;
       padding: 16px 18px;
+      min-width: 0;
     }
 
     .kpi .l { color: var(--mut); font-size: 12px; }
@@ -73,7 +74,7 @@
 
     h2 small { color: var(--mut); font-weight: 400; font-size: 12px; margin-left: 6px; }
 
-    .ch { height: 340px; }
+    .ch { height: 340px; width: 100%; }
 
     .ch.tall { height: 560px; }
 
@@ -156,55 +157,234 @@
 
     .note { color: var(--mut); font-size: 12px; margin-top: 10px; line-height: 1.6; }
 
+    .tools { padding-bottom: 0; }
+
+    .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+    button {
+      background: #10131b;
+      color: var(--txt);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 12px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    button:disabled { opacity: 0.45; cursor: default; }
+
+    .hint { color: var(--mut); font-size: 12px; margin: 0; flex: 1; min-width: 180px; }
+
+    .guide {
+      margin-top: 14px;
+      color: var(--mut);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .guide p { margin: 0 0 6px; }
+
+    .boot.error { color: #ffd2dc; white-space: pre-wrap; }
+
+    .ch.empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--mut);
+      font-size: 14px;
+    }
+
+    body.is-drag .tools {
+      outline: 1px dashed var(--b);
+      border-radius: 12px;
+    }
+
     @media (max-width: 900px) {
       .k { grid-template-columns: repeat(2, 1fr); }
       .g2, .g3 { grid-template-columns: 1fr; }
     }
+
+    @media (max-width: 480px) {
+      .wrap { padding: 16px 10px 36px; }
+      .card { padding: 12px 8px; }
+      .ch { height: 460px; }
+      .ch.tall { height: 520px; }
+      h1 { font-size: 22px; }
+    }
   </style>
 </head>
 <body>
-  <div id="dashboard"><p class="boot">正在载入示例数据。</p></div>
+  <div class="wrap tools">
+    <div class="bar" id="toolbar">
+      <button type="button" id="pick-file">选择文件</button>
+      <input id="file-input" type="file" accept=".csv,text/csv" hidden>
+      <button type="button" id="clear-data">清除数据</button>
+      <p id="source-label" class="hint">也可以把 CSV 拖进页面。</p>
+    </div>
+    <div id="guide" class="guide" hidden>
+      <p>当前没有载入你自己的表，下面是一份虚构示例。</p>
+      <p>点「选择文件」，或把 CSV 拖进页面。表会留在这台浏览器里，刷新后还在。「清除数据」会删掉它，并回到这份示例。</p>
+      <p>也可以在地址后加上 ?data= 公开 CSV 链接，用 ?config= 附上配置，用 ?today=YYYY-MM-DD 指定截止日期。</p>
+    </div>
+  </div>
+  <div id="dashboard"><p class="boot">正在载入。</p></div>
   <script src="./vendor/echarts-5.5.1.min.js"></script>
   <script src="./vendor/papaparse-5.7.0.min.js"></script>
   <script type="module">
     import { compute } from "./app/compute.js";
+    import { csvFileNameOk, loadDashboard, LoadError, messageFor } from "./app/load.js";
     import { parseCsv } from "./app/parse.js";
     import { render } from "./app/render.js";
+    import { createBrowserStorage, createMemoryStorage } from "./app/storage.js";
 
     const root = document.querySelector("#dashboard");
-    const params = new URLSearchParams(location.search);
+    const guide = document.querySelector("#guide");
+    const sourceLabel = document.querySelector("#source-label");
+    const clearButton = document.querySelector("#clear-data");
+    const fileInput = document.querySelector("#file-input");
+    const pickButton = document.querySelector("#pick-file");
+    const storage = openStorage();
+
+    function openStorage() {
+      try {
+        return createBrowserStorage();
+      } catch {
+        return createMemoryStorage();
+      }
+    }
 
     function showError(text) {
       root.replaceChildren();
       const note = document.createElement("p");
-      note.className = "boot";
+      note.className = "boot error";
+      note.setAttribute("role", "alert");
       note.textContent = text;
       root.append(note);
+      guide.hidden = false;
     }
 
-    // 只接受本站相对路径，用来临时换仓库里的虚构夹具。正式的文件导入和 ?data= 还没做。
-    function relativeFixture(value) {
-      if (value == null || value === "") return "examples/sample.csv";
-      if (!/^[A-Za-z0-9_./-]+$/.test(value) || value.startsWith("/") || value.includes("..")) {
-        throw new Error("fixture 只接受本站上的相对路径");
+    function syncChrome(loaded, failed) {
+      let saved = null;
+      try {
+        saved = storage.read();
+      } catch {
+        saved = null;
       }
-      return value;
+      clearButton.disabled = !saved;
+      if (failed || !loaded) {
+        sourceLabel.textContent = "没有把表格载入页面。也可以把 CSV 拖进页面。";
+        guide.hidden = false;
+        return;
+      }
+      guide.hidden = loaded.source !== "sample";
+      if (loaded.source === "import") {
+        sourceLabel.textContent = loaded.name
+          ? `已导入 ${loaded.name}，保存在这台浏览器里。`
+          : "已导入的表格保存在这台浏览器里。";
+      } else if (loaded.source === "remote") {
+        sourceLabel.textContent = "当前数据来自 ?data= 链接。";
+      } else if (loaded.source === "fixture") {
+        sourceLabel.textContent = "当前数据来自本站夹具。";
+      } else {
+        sourceLabel.textContent = "当前是内置示例。也可以把 CSV 拖进页面。";
+      }
     }
 
-    try {
-      const fixture = relativeFixture(params.get("fixture"));
-      const response = await fetch(fixture);
-      if (!response.ok) throw new Error(`没有读到 ${fixture}`);
-      const parsed = parseCsv(await response.text());
-      const stats = compute(parsed);
-      render(stats, parsed.rows, parsed.participants, root, {
-        title: parsed.config.title,
-        config: parsed.config,
-        sample: true,
-      });
-    } catch (error) {
-      showError(`页面没有渲染出来：${error.message}`);
+    function rememberImport(url) {
+      url.searchParams.delete("data");
+      url.searchParams.delete("fixture");
+      history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     }
+
+    async function show(search) {
+      try {
+        const loaded = await loadDashboard({
+          search,
+          storage,
+          sampleUrl: "examples/sample.csv",
+        });
+        const parsed = parseCsv(loaded.csv, loaded.config);
+        const stats = compute(parsed, loaded.today);
+        render(stats, parsed.rows, parsed.participants, root, {
+          title: parsed.config.title,
+          config: parsed.config,
+          sample: loaded.source === "sample",
+        });
+        syncChrome(loaded, false);
+      } catch (error) {
+        showError(messageFor(error));
+        syncChrome(null, true);
+      }
+    }
+
+    async function importFile(file) {
+      try {
+        if (!file) throw new LoadError("没有拿到文件。");
+        if (!csvFileNameOk(file.name)) throw new LoadError("请导入 CSV 文件。");
+        const csv = await file.text();
+        parseCsv(csv);
+        storage.write({ csv, name: file.name || "导入.csv" });
+        rememberImport(new URL(location.href));
+        await show(location.search);
+      } catch (error) {
+        showError(messageFor(error));
+        syncChrome(null, true);
+      }
+    }
+
+    pickButton.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files && fileInput.files[0];
+      fileInput.value = "";
+      if (file) void importFile(file);
+    });
+    clearButton.addEventListener("click", () => {
+      try {
+        storage.clear();
+      } catch (error) {
+        showError(messageFor(error));
+        return;
+      }
+      void show(location.search);
+    });
+
+    function hasFiles(event) {
+      const types = event.dataTransfer ? event.dataTransfer.types : null;
+      return types ? [...types].includes("Files") : false;
+    }
+
+    let dragDepth = 0;
+    window.addEventListener("dragenter", (event) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      dragDepth += 1;
+      document.body.classList.add("is-drag");
+    });
+    window.addEventListener("dragover", (event) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+    });
+    window.addEventListener("dragleave", () => {
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) document.body.classList.remove("is-drag");
+    });
+    window.addEventListener("drop", (event) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      dragDepth = 0;
+      document.body.classList.remove("is-drag");
+      const files = [...(event.dataTransfer?.files ?? [])];
+      const file = files.find((item) => csvFileNameOk(item.name));
+      if (!file) {
+        showError("请把 CSV 文件拖进页面。");
+        syncChrome(null, true);
+        return;
+      }
+      void importFile(file);
+    });
+
+    await show(location.search);
   </script>
 </body>
 </html>

@@ -40,8 +40,53 @@ export const STATUS_FILTERS = Object.freeze([
 ]);
 
 const CHARTS = new WeakMap();
+const VIEW = new WeakMap();
 const MOUNTED = new Set();
 let resizeBound = false;
+
+/** 有正的类型计数才画饼图。全是 0 时三个扇区会被画成相等的 0%。 */
+export function hasTypeCounts(stats) {
+  const counts = stats?.type_cnt;
+  if (!counts || typeof counts !== "object") return false;
+  return Object.values(counts).some((value) => Number(value) > 0);
+}
+
+/**
+ * 窄屏把饼图缩小，标签贴着图表边缘排，避免 390 宽时被画布裁掉。
+ * width 未知时用桌面尺寸；页面画完后会按容器宽度再套一次。
+ */
+export function pieSeriesLayout(width) {
+  const narrow = typeof width === "number" && width > 0 && width <= 480;
+  if (narrow) {
+    return {
+      radius: ["22%", "36%"],
+      center: ["50%", "42%"],
+      label: {
+        color: "#e7e9ee",
+        fontSize: 11,
+        lineHeight: 15,
+        formatter: "{b}\n{c} 场 · {d}%",
+        overflow: "break",
+        width: 78,
+        alignTo: "edge",
+        edgeDistance: 2,
+        bleedMargin: 0,
+      },
+      labelLine: { length: 6, length2: 4 },
+    };
+  }
+  return {
+    radius: ["40%", "62%"],
+    center: ["50%", "46%"],
+    label: {
+      color: "#e7e9ee",
+      formatter: "{b}\n{c} 场 · {d}%",
+      overflow: "break",
+      width: 120,
+    },
+    labelLine: { length: 8, length2: 8 },
+  };
+}
 
 function cellText(value) {
   return String(value ?? "").trim();
@@ -425,26 +470,29 @@ export function buildCharts(stats, rows, participants, options = {}) {
   const venues = (source.venue ?? []).slice().reverse();
   const cityColors = regionsForCities(source, rows, participants, options.config ?? {});
   const regionLine = (source.region ?? []).map((entry) => `${entry[0]} ${entry[1]}`).join("   ");
+  const pie = pieSeriesLayout(options.width);
 
-  const type = Object.assign({}, base, {
-    tooltip: { trigger: "item" },
-    legend: { bottom: 0, textStyle: { color: "#c9cdd8" } },
-    series: [
-      {
-        type: "pie",
-        radius: ["40%", "62%"],
-        center: ["50%", "46%"],
-        itemStyle: { borderColor: "#181b24", borderWidth: 3 },
-        label: { color: "#e7e9ee", formatter: "{b}\n{c} 场 · {d}%", overflow: "none" },
-        labelLine: { length: 8, length2: 8 },
-        data: types.map((typeName) => ({
-          name: typeName,
-          value: typeCnt[typeName] ?? 0,
-          itemStyle: { color: typeColorOf.get(typeName) },
-        })),
-      },
-    ],
-  });
+  const type = hasTypeCounts(source)
+    ? Object.assign({}, base, {
+        tooltip: { trigger: "item" },
+        legend: { bottom: 0, textStyle: { color: "#c9cdd8" } },
+        series: [
+          {
+            type: "pie",
+            radius: pie.radius,
+            center: pie.center,
+            itemStyle: { borderColor: "#181b24", borderWidth: 3 },
+            label: pie.label,
+            labelLine: pie.labelLine,
+            data: types.map((typeName) => ({
+              name: typeName,
+              value: typeCnt[typeName] ?? 0,
+              itemStyle: { color: typeColorOf.get(typeName) },
+            })),
+          },
+        ],
+      })
+    : null;
 
   const year = Object.assign({}, base, {
     tooltip: { trigger: "axis" },
@@ -592,6 +640,13 @@ function chartBox(title, small, name, className) {
   return box;
 }
 
+function emptyTypeBox() {
+  const box = element("div", "card");
+  box.append(heading("场次类型", "没有类型列"));
+  box.append(element("div", "ch empty", "无类型数据"));
+  return box;
+}
+
 function fillSelect(select, options) {
   select.replaceChildren();
   for (const option of options) select.append(new Option(option.label, option.value));
@@ -665,7 +720,22 @@ function disposeCharts(root) {
   if (!charts) return;
   for (const chart of charts) chart.dispose();
   CHARTS.delete(root);
+  VIEW.delete(root);
   MOUNTED.delete(root);
+}
+
+function relayoutType(root) {
+  const view = VIEW.get(root);
+  const charts = CHARTS.get(root) ?? [];
+  const node = root.querySelector?.("[data-chart=type]");
+  if (!view || !node) return;
+  const chart = charts.find((item) => item.getDom?.() === node);
+  if (!chart) return;
+  const next = buildCharts(view.stats, view.rows, view.participants, {
+    ...view.options,
+    width: node.clientWidth,
+  }).type;
+  if (next) chart.setOption(next);
 }
 
 function bindResize() {
@@ -674,6 +744,7 @@ function bindResize() {
   window.addEventListener("resize", () => {
     for (const root of MOUNTED) {
       for (const chart of CHARTS.get(root) ?? []) chart.resize();
+      relayoutType(root);
     }
   });
 }
@@ -739,7 +810,9 @@ export function render(stats, rows, participants, el, options = {}) {
 
   const types = element("div", "grid g2");
   types.append(
-    chartBox("场次类型", "ワンマン / 対バン / フェス", "type", "ch"),
+    hasTypeCounts(stats)
+      ? chartBox("场次类型", "ワンマン / 対バン / フェス", "type", "ch")
+      : emptyTypeBox(),
     chartBox("每年场次", "按类型堆叠", "year", "ch"),
   );
   const places = element("div", "grid g2");
@@ -854,7 +927,16 @@ export function render(stats, rows, participants, el, options = {}) {
   draw();
 
   el.replaceChildren(wrap);
-  const charts = paintCharts(wrap, buildCharts(stats, rows, people, options));
+  const viewOptions = { config };
+  VIEW.set(el, { stats, rows, participants: people, options: viewOptions });
+  const typeNode = wrap.querySelector("[data-chart=type]");
+  const charts = paintCharts(
+    wrap,
+    buildCharts(stats, rows, people, {
+      ...viewOptions,
+      width: typeNode?.clientWidth ?? 0,
+    }),
+  );
   CHARTS.set(el, charts);
   MOUNTED.add(el);
   bindResize();

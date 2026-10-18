@@ -107,6 +107,73 @@ test("aliases is accepted when artist_aliases is absent, and artist_aliases wins
   assert.equal(both.rows[0].artist, "Paper Moon");
 });
 
+test("an unclosed quote reports the record start line and does not swallow later rows", () => {
+  const csv = [
+    "date,event,artist",
+    '2024-01-01,E,"unterminated',
+    "bad,E,B",
+    "2024-02-02,Later,Northwind",
+  ].join("\n");
+  assert.throws(
+    () => parseCsv(csv),
+    (error) => {
+      assert.ok(error instanceof ParseError);
+      assert.equal(error.line, 2);
+      assert.match(error.message, /第 2 行：引号没有闭合/);
+      assert.equal(error.errors.length, 1);
+      assert.equal(error.errors[0].code, "unclosed_quote");
+      assert.equal(error.errors[0].unit, "line");
+      return true;
+    },
+  );
+
+  assert.throws(
+    () => parseCsv('2024-01-01,E,"unterminated\nbad,E,B'),
+    (error) => {
+      assert.equal(error.line, 1);
+      assert.match(error.message, /第 1 行：引号没有闭合/);
+      return true;
+    },
+  );
+
+  const afterClosed = [
+    "event,date,artist",
+    '"Harbor',
+    'Night",2024-01-01,Northwind',
+    'Later,2024-02-02,"unterminated',
+    "bad,E,B",
+    "Next,2024-03-03,Paper Moon",
+  ].join("\n");
+  assert.throws(
+    () => parseCsv(afterClosed),
+    (error) => {
+      assert.equal(error.line, 4);
+      assert.match(error.message, /第 4 行：引号没有闭合/);
+      return true;
+    },
+  );
+
+  const crlf = 'event,artist\r\nShow,Northwind\r\nLater,"unterminated\r\nbad,E,B\r\n';
+  assert.throws(
+    () => parseCsv(crlf),
+    (error) => {
+      assert.equal(error.line, 3);
+      assert.match(error.message, /第 3 行：引号没有闭合/);
+      return true;
+    },
+  );
+
+  const blankBefore = 'date,event\n\n2024-01-01,"open\nstill\n';
+  assert.throws(
+    () => parseCsv(blankBefore),
+    (error) => {
+      assert.equal(error.line, 3);
+      assert.match(error.message, /第 3 行：引号没有闭合/);
+      return true;
+    },
+  );
+});
+
 test("escaped quotes stay inside one cell", () => {
   const result = parseCsv('event,artist\n"Say ""Hi""",Northwind\n');
   assert.equal(result.rows.length, 1);
