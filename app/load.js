@@ -291,16 +291,33 @@ export async function loadQueryConfig(options = {}) {
   return parseConfigText(await fetchText(fetchImpl, target, "config"));
 }
 
+const IMPORT_DROPPED_KEYS = new Set(["data", "fixture", "vault"]);
+
 /**
- * 本地导入成功后，地址里去掉 ?data=、?fixture=、?vault=，留下 ?config= 和 ?today=。
+ * 查询参数名的解码与 URLSearchParams 一致（`+` 是空格，百分号编码会解开）。
+ * 只用来判断要不要删掉这一段，不改写留下的原文。
+ */
+function queryParamKey(part) {
+  const eq = part.indexOf("=");
+  const rawKey = eq === -1 ? part : part.slice(0, eq);
+  return new URLSearchParams(`${rawKey}=`).keys().next().value;
+}
+
+/**
+ * 本地导入成功后，地址里去掉 ?data=、?fixture=、?vault=，其余参数按原来的写法留下。
+ * ?config= 的值原样保留，不把 `/` 再编成 %2F。?today= 和其他参数同样不改写。
  */
 export function searchAfterImport(search) {
-  const params = new URLSearchParams(String(search ?? "").replace(/^\?/, ""));
-  params.delete("data");
-  params.delete("fixture");
-  params.delete("vault");
-  const text = params.toString();
-  return text ? `?${text}` : "";
+  const raw = String(search ?? "").replace(/^\?/, "");
+  if (!raw) return "";
+  const kept = [];
+  for (const part of raw.split("&")) {
+    if (part === "") continue;
+    const key = queryParamKey(part);
+    if (IMPORT_DROPPED_KEYS.has(key)) continue;
+    kept.push(part);
+  }
+  return kept.length ? `?${kept.join("&")}` : "";
 }
 
 /**
