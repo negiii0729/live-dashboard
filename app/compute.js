@@ -285,6 +285,17 @@ function rowStatus(row, today, columns) {
   return "unmarked";
 }
 
+/** 一行的状态。columns 是参与者列名，与 parse 结果里的 column 相同。 */
+export function attendanceStatus(row, today, columns) {
+  return rowStatus(row ?? {}, today, columns ?? []);
+}
+
+/** 这一行计入的地区。config 用 parse 归一化后的 defaultRegion。 */
+export function regionName(row, config = {}) {
+  const source = row ?? {};
+  return resolveRegion(source, text(source.city), config ?? {});
+}
+
 function markedHeads(row, columns) {
   let count = 0;
   for (const column of columns) {
