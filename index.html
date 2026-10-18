@@ -7,73 +7,204 @@
   <link rel="icon" href="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
   <style>
     :root {
-      color-scheme: light dark;
-      --bg: #f4f6f8;
-      --card: #ffffff;
-      --text: #1c1f24;
-      --muted: #5c6570;
-      --line: #e3e6eb;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #121417;
-        --card: #1c2026;
-        --text: #f2f4f7;
-        --muted: #a7b0ba;
-        --line: #2c333c;
-      }
+      color-scheme: dark;
+      --bg: #0f1117;
+      --card: #181b24;
+      --line: #272b38;
+      --txt: #e7e9ee;
+      --mut: #8b91a3;
+      --a: #ff6b8b;
+      --b: #5cc8ff;
+      --c: #ffc857;
+      --d: #7be0a6;
     }
 
     * { box-sizing: border-box; }
 
+    html { background: var(--bg); }
+
     body {
       margin: 0;
       min-height: 100vh;
-      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
       background: var(--bg);
-      color: var(--text);
-      line-height: 1.5;
+      color: var(--txt);
+      font-family: "Noto Sans CJK SC", "Noto Sans CJK JP", "PingFang SC", "Hiragino Sans", "Microsoft YaHei", system-ui, sans-serif;
     }
 
-    main {
-      max-width: 40rem;
-      margin: 4rem auto;
-      padding: 2rem;
+    .boot {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 28px 24px;
+      color: var(--mut);
+    }
+
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 24px 48px; }
+
+    h1 { font-size: 26px; margin: 0 0 4px; }
+
+    .sub { color: var(--mut); font-size: 13px; margin-bottom: 22px; }
+
+    .sample { color: var(--mut); font-size: 12px; margin: -14px 0 22px; }
+
+    .grid { display: grid; gap: 16px; }
+
+    .k { grid-template-columns: repeat(var(--kpi-cols, 6), minmax(0, 1fr)); }
+
+    .card {
       background: var(--card);
       border: 1px solid var(--line);
-      border-radius: 12px;
+      border-radius: 14px;
+      padding: 16px 18px;
     }
 
-    h1 {
-      margin: 0 0 0.75rem;
-      font-size: 1.75rem;
+    .kpi .l { color: var(--mut); font-size: 12px; }
+
+    .kpi .v { font-size: 30px; font-weight: 700; margin-top: 6px; }
+
+    .kpi .v.price { font-size: 24px; }
+
+    .kpi .h { color: var(--mut); font-size: 12px; margin-top: 4px; line-height: 1.5; }
+
+    .g2 { grid-template-columns: 1fr 1.6fr; margin-top: 16px; }
+
+    .g3 { grid-template-columns: 1fr 1fr 1fr; margin-top: 16px; }
+
+    h2 { font-size: 15px; margin: 0 0 10px; font-weight: 600; }
+
+    h2 small { color: var(--mut); font-weight: 400; font-size: 12px; margin-left: 6px; }
+
+    .ch { height: 340px; }
+
+    .ch.tall { height: 560px; }
+
+    ul.list { list-style: none; margin: 0; padding: 0; font-size: 13px; }
+
+    ul.list li {
+      padding: 8px 0;
+      border-bottom: 1px dashed var(--line);
+      display: flex;
+      gap: 10px;
     }
 
-    p { margin: 0.75rem 0; }
+    ul.list .d { color: var(--c); min-width: 84px; font-variant-numeric: tabular-nums; }
 
-    #status { font-weight: 650; }
+    ul.list .m { color: var(--mut); }
 
-    .note { color: var(--muted); }
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--mut);
+      white-space: nowrap;
+    }
+
+    .t-ワンマン { color: var(--a); border-color: #ff6b8b55; }
+
+    .t-対バン { color: var(--b); border-color: #5cc8ff55; }
+
+    .t-フェス { color: var(--c); border-color: #ffc85755; }
+
+    .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+
+    input, select {
+      background: #10131b;
+      color: var(--txt);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 10px;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    input { flex: 1; min-width: 220px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+
+    th, td {
+      text-align: left;
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--mut);
+      font-weight: 500;
+      position: sticky;
+      top: 0;
+      background: var(--card);
+      cursor: pointer;
+    }
+
+    td.art { max-width: 300px; }
+
+    td:nth-child(2) { white-space: nowrap; }
+
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    tr.s-upcoming td { color: #ffd98a; }
+
+    tr.s-undated td, tr.s-unmarked td { color: var(--mut); }
+
+    .tbl { max-height: 640px; overflow: auto; }
+
+    .cnt { color: var(--mut); font-size: 12px; margin-left: auto; align-self: center; }
+
+    .table-card { margin-top: 16px; }
+
+    .note { color: var(--mut); font-size: 12px; margin-top: 10px; line-height: 1.6; }
+
+    @media (max-width: 900px) {
+      .k { grid-template-columns: repeat(2, 1fr); }
+      .g2, .g3 { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Live 观演记录</h1>
-    <p id="status">正在检查页面依赖。</p>
-    <p class="note">这是通用观演记录页的骨架。仓库里没有观演数据，打开页面的人之后载入自己的表格。</p>
-  </main>
+  <div id="dashboard"><p class="boot">正在载入示例数据。</p></div>
   <script src="./vendor/echarts-5.5.1.min.js"></script>
   <script src="./vendor/papaparse-5.7.0.min.js"></script>
   <script type="module">
-    const status = document.querySelector("#status");
-    const chartReady = typeof globalThis.echarts?.init === "function";
-    const parseReady = typeof globalThis.Papa?.parse === "function";
-    if (!chartReady || !parseReady) {
-      status.textContent = "页面依赖没有就绪。";
-      throw new Error("vendor scripts did not attach");
+    import { compute } from "./app/compute.js";
+    import { parseCsv } from "./app/parse.js";
+    import { render } from "./app/render.js";
+
+    const root = document.querySelector("#dashboard");
+    const params = new URLSearchParams(location.search);
+
+    function showError(text) {
+      root.replaceChildren();
+      const note = document.createElement("p");
+      note.className = "boot";
+      note.textContent = text;
+      root.append(note);
     }
-    status.textContent = "页面骨架已就绪。";
+
+    // 只接受本站相对路径，用来临时换仓库里的虚构夹具。正式的文件导入和 ?data= 还没做。
+    function relativeFixture(value) {
+      if (value == null || value === "") return "examples/sample.csv";
+      if (!/^[A-Za-z0-9_./-]+$/.test(value) || value.startsWith("/") || value.includes("..")) {
+        throw new Error("fixture 只接受本站上的相对路径");
+      }
+      return value;
+    }
+
+    try {
+      const fixture = relativeFixture(params.get("fixture"));
+      const response = await fetch(fixture);
+      if (!response.ok) throw new Error(`没有读到 ${fixture}`);
+      const parsed = parseCsv(await response.text());
+      const stats = compute(parsed);
+      render(stats, parsed.rows, parsed.participants, root, {
+        title: parsed.config.title,
+        config: parsed.config,
+        sample: true,
+      });
+    } catch (error) {
+      showError(`页面没有渲染出来：${error.message}`);
+    }
   </script>
 </body>
 </html>
