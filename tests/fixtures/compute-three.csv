@@ -1,0 +1,10 @@
+date,event,artist,venue,city,type,price,alice,bob,cara
+2024-01-01,Lantern Fest,Northwind,Blue Hall,上海,ワンマン,100,✅,✅,✅
+2024-02-01,Harbor Night,"Paper Moon
+/Glass Harbor",Cedar Room,東京,対バン,50,✅,,
+2024-03-01,Glass Show,Glass Harbor,Glass Dome,香港,フェス,80,,✅,
+2024-04-01,Cedar Set,Lantern Club,North Pier,上海,ワンマン,,✅,✅,
+2024-05-01,Westport Bill,Copper Kite,Paper Stage,台北,対バン,30,,,✅
+2026-11-01,Future Fest,Quartz Owls,Quartz Room,上海,フェス,999,✅,✅,✅
+,Undated Night,Amberline,Moss Theater,杭州,ワンマン,10,✅,✅,✅
+2020-01-01,Missed Show,Brightvale,Harbor Shed,大阪,フェス,40,,,
