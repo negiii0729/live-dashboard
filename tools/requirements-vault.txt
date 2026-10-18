@@ -1,3 +1,4 @@
-# Local install for tools/encrypt_vault.py. CI does not install this.
+# tools/encrypt_vault.py. Version is pinned.
+# CI and local installs both use:
 #   python3 -m pip install -r tools/requirements-vault.txt
 cryptography==50.0.2

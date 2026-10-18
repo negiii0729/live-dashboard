@@ -3,7 +3,9 @@
 
 The password is read from the environment (LIVE_PASSWORD by default, or the
 variable named by --password-env). It is never accepted as a command-line
-argument.
+argument. Abbreviations are off, so --pass is not --password-env. The variable
+name must match [A-Z_][A-Z0-9_]*. Error text never includes the password or
+that name.
 
 vault.json is {"v":1,"kdf":"PBKDF2-SHA256","iter":N,"salt":b64,"iv":b64,"ct":b64}.
 The plaintext is UTF-8 JSON {"csv":"<csv text>","config":<object or null>}.
@@ -17,6 +19,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -40,14 +43,33 @@ class EncryptError(Exception):
     """A user-facing encryption failure. The message does not include the password."""
 
 
+# fullmatch, not `$`, so a trailing newline cannot slip through.
+ENV_NAME_RE = re.compile(r"\A[A-Z_][A-Z0-9_]*\Z")
+
+
+class VaultArgumentParser(argparse.ArgumentParser):
+    """Long-option errors must not repeat values the user typed."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs["allow_abbrev"] = False
+        super().__init__(*args, **kwargs)
+        self.supplied_values: tuple[str, ...] = ()
+
+    def error(self, message: str) -> None:
+        if any(value and value in message for value in self.supplied_values):
+            message = "参数不正确。密码只从环境变量读取，不要写在命令行参数里。"
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: error: {message}\n")
+
+
 def read_password(env_name: str) -> str:
+    if not isinstance(env_name, str) or ENV_NAME_RE.fullmatch(env_name) is None:
+        raise EncryptError("环境变量名不合法。")
     if env_name not in os.environ:
-        raise EncryptError(
-            f"环境变量 {env_name} 没有设置。密码只从环境变量读取，不要写在命令行参数里。"
-        )
+        raise EncryptError("环境变量没有设置。密码只从环境变量读取，不要写在命令行参数里。")
     password = os.environ[env_name]
     if password == "":
-        raise EncryptError(f"环境变量 {env_name} 是空的。")
+        raise EncryptError("环境变量是空的。")
     return password
 
 
@@ -121,11 +143,12 @@ def dump_vault(vault: dict) -> str:
     return json.dumps(vault, ensure_ascii=True, separators=(",", ":")) + "\n"
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+def build_parser() -> VaultArgumentParser:
+    parser = VaultArgumentParser(
         description="把 CSV 和可选配置加密成 vault.json。密码从环境变量读取，不会从命令行参数读取。",
         epilog=USAGE,
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
     parser.add_argument("--csv", required=True, help="明文 CSV 路径，例如 data.csv")
     parser.add_argument("--config", help="可选的 config.json。省略时 vault 里的 config 为 null")
@@ -133,7 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--password-env",
         default="LIVE_PASSWORD",
-        help="读取密码的环境变量名，默认 LIVE_PASSWORD",
+        help="读取密码的环境变量名，默认 LIVE_PASSWORD。只能是大写字母、数字和下划线，且不能以数字开头",
     )
     parser.add_argument(
         "--iterations",
@@ -144,8 +167,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def option_name(arg: str) -> str:
+    if arg.startswith("--"):
+        return arg.split("=", 1)[0]
+    return ""
+
+
+def command_values(argv: list[str]) -> tuple[str, ...]:
+    values: list[str] = []
+    for arg in argv:
+        if arg.startswith("--") and "=" in arg:
+            values.append(arg.split("=", 1)[1])
+        elif not arg.startswith("-"):
+            values.append(arg)
+    return tuple(values)
+
+
 def password_on_argv(argv: list[str]) -> bool:
-    return any(arg == "--password" or arg.startswith("--password=") for arg in argv)
+    """True when a flag is trying to pass the password, including --pass abbreviations."""
+    for arg in argv:
+        name = option_name(arg)
+        if not name.startswith("--pass") or name == "--password-env":
+            continue
+        return True
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -157,6 +202,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     parser = build_parser()
+    parser.supplied_values = command_values(args_in)
     try:
         args = parser.parse_args(args_in)
     except SystemExit as exc:

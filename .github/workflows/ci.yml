@@ -24,5 +24,8 @@ jobs:
       - name: Run tests
         run: node --test
 
+      - name: Install vault dependencies
+        run: python3 -m pip install -r tools/requirements-vault.txt
+
       - name: Run vault encrypt tests
         run: python3 -m unittest tests/test_encrypt_vault.py
