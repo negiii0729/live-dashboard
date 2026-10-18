@@ -18,6 +18,8 @@ export class LoadError extends Error {
 const CONFIG_CODES = new Set([
   "bad_config",
   "bad_schema",
+  "bad_price_mode",
+  "bad_currency",
   "unknown_participant",
   "duplicate_participant",
 ]);

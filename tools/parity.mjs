@@ -8,7 +8,8 @@ const usage = `用法: node tools/parity.mjs <file.csv> --today YYYY-MM-DD [--co
 解析 CSV 并打印统计 JSON，字段名与参考脚本的 --json 相同。
 参与者场次和「仅某人」用表头里的列名（列顺序），不写死人名。
 price_total 是已看场次的票价合计：price_mode 为 total（默认）时把 price 直接相加，
-为 per_person 时乘该场到场人数。不输出按人头估算的 spend_heads。
+为 per_person 时乘该场到场人数。这里打印未取整的原值；页面显示时才四舍五入到整数元。
+不输出按人头估算的 spend_heads。
 spend / spend_n 仍是按地区把原价相加后的对照字段。`;
 
 const args = process.argv.slice(2);

@@ -11,13 +11,16 @@ import {
   buildCharts,
   cityOptions,
   footnote,
+  currencySymbol,
   formatNumber,
+  formatPriceTotal,
   hasTypeCounts,
   kpiCards,
   pieSeriesLayout,
   listDetail,
   matchesWho,
   render,
+  roundHalfAwayFromZero,
   sortRows,
   subtitleText,
   tableColumns,
@@ -53,6 +56,25 @@ test("formatNumber groups thousands and keeps a fractional part", () => {
   assert.equal(formatNumber(0), "0");
   assert.equal(formatNumber(1000), "1,000");
   assert.equal(formatNumber(-12.5), "-12.5");
+});
+
+test("price totals display as rounded yuan, including the 72533 example", () => {
+  assert.equal(roundHalfAwayFromZero(871.5), 872);
+  assert.equal(roundHalfAwayFromZero(2.5), 3);
+  assert.equal(roundHalfAwayFromZero(0.5), 1);
+  assert.equal(roundHalfAwayFromZero(2.4), 2);
+  assert.equal(roundHalfAwayFromZero(-1.5), -2);
+  assert.equal(formatPriceTotal(72533), "¥72,533");
+  assert.equal(formatPriceTotal(72533, "CNY"), "¥72,533");
+  assert.equal(formatPriceTotal(871.5), "¥872");
+  assert.equal(formatPriceTotal(2.5, "USD"), "$3");
+  assert.equal(formatPriceTotal(0.4, "EUR"), "€0");
+  assert.equal(formatPriceTotal(Number.NaN), "\u2014");
+
+  const counted = kpiCards({ price_total: 72533, no_price: 17 }, []);
+  const price = counted.find((card) => card.key === "price");
+  assert.equal(price.value, "¥72,533");
+  assert.equal(price.hint, "17 场无票价未计");
 });
 
 test("who filter options follow the participants, including 1, 2, and 3 people", () => {
@@ -160,7 +182,8 @@ test("kpi cards follow participant count and show price_total", () => {
   assert.equal(cards[2].hint, "其中仅 bob 3 场");
   assert.equal(cards[3].value, "5");
   assert.equal(cards[3].hint, "占 45.5%");
-  assert.equal(cards[4].value, "¥871.5");
+  assert.equal(two.stats.price_total, 871.5);
+  assert.equal(cards[4].value, "¥872");
   assert.equal(cards[4].hint, "1 场无票价未计");
   assert.equal(cards[5].value, "1");
   assert.equal(cards[5].hint, "待定 1 · 已过未标记 2");
@@ -186,6 +209,42 @@ test("kpi cards follow participant count and show price_total", () => {
     ["total", "price", "upcoming"],
   );
   assert.match(footnote(none.stats, none.parsed.participants), /没有参与者列/);
+});
+
+test("currency changes the symbol and leaves the rounded digits alone", () => {
+  const two = ready("compute-two.csv", { currency: "JPY" });
+  assert.equal(two.stats.price_total, 871.5);
+  assert.equal(two.parsed.config.currency, "JPY");
+  const jpy = kpiCards(two.stats, two.parsed.participants, { currency: "JPY" }).find(
+    (card) => card.key === "price",
+  );
+  const cny = kpiCards(two.stats, two.parsed.participants, { currency: "CNY" }).find(
+    (card) => card.key === "price",
+  );
+  const usd = kpiCards(two.stats, two.parsed.participants, {
+    config: { currency: "USD" },
+  }).find((card) => card.key === "price");
+  const unknown = kpiCards(two.stats, two.parsed.participants, { currency: "xyz" }).find(
+    (card) => card.key === "price",
+  );
+  assert.equal(currencySymbol("JPY"), "¥");
+  assert.equal(currencySymbol("CNY"), "¥");
+  assert.equal(currencySymbol("USD"), "$");
+  assert.equal(currencySymbol("GBP"), "£");
+  assert.equal(currencySymbol("HKD"), "HK$");
+  assert.equal(currencySymbol("KRW"), "₩");
+  assert.equal(jpy.value, "¥872");
+  assert.equal(cny.value, "¥872");
+  assert.equal(usd.value, "$872");
+  assert.equal(unknown.value, "XYZ 872");
+  assert.equal(jpy.hint, cny.hint);
+
+  const none = ready("participants-0.csv");
+  const missing = kpiCards(none.stats, none.parsed.participants).find((card) => card.key === "price");
+  assert.equal(none.stats.no_price, 2);
+  assert.equal(none.stats.price_total, 180);
+  assert.equal(missing.value, "¥180");
+  assert.equal(missing.hint, "2 场无票价未计");
 });
 
 test("the footnote describes the direct price total", () => {
@@ -379,7 +438,8 @@ test("preview text prints the page numbers for a local CSV", () => {
     { cwd: root, encoding: "utf8" },
   );
   assert.equal(run.status, 0, run.stderr);
-  assert.match(run.stdout, /票价合计（表内原值）\t¥871\.5/);
+  assert.match(run.stdout, /票价合计（表内原值）\t¥872/);
+  assert.match(run.stdout, /1 场无票价未计/);
   assert.match(run.stdout, /一起看\t5/);
   assert.match(run.stdout, /alice 去了/);
   assert.match(run.stdout, /仅 bob/);

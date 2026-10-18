@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { compute } from "../app/compute.js";
+import { kpiCards } from "../app/render.js";
 import {
   LoadError,
   csvFileNameOk,
@@ -282,6 +283,65 @@ test("404, a blocked cross-origin read, and a bad csv each have a Chinese messag
       }),
     (error) => {
       assert.match(error.message, /不是合法的 JSON/);
+      return true;
+    },
+  );
+});
+
+test("?config= applies price_mode and currency to the fictional sample", async () => {
+  const csv = sampleCsv();
+  const config = readFileSync(new URL("../examples/config.json", import.meta.url), "utf8");
+  const loaded = await loadDashboard({
+    search: "?data=examples/sample.csv&config=examples/config.json&today=2026-10-18",
+    storage: createMemoryStorage(),
+    fetch: async (url) => ok(String(url).endsWith("config.json") ? config : csv),
+  });
+  const parsed = parseCsv(loaded.csv, loaded.config);
+  const stats = compute(parsed, loaded.today);
+  assert.equal(parsed.config.priceMode, "per_person");
+  assert.equal(parsed.config.currency, "CNY");
+  assert.deepEqual(
+    parsed.participants.map((person) => person.label),
+    ["Alice", "Bob"],
+  );
+  // 与 compute-two 的到场场次相同：两人 200、150.5、300、0，一人 80、60、10.5、10.5、40、20。
+  const hand = 200 * 2 + 150.5 * 2 + 80 + 60 + 300 * 2 + 10.5 + 10.5 + 40 + 20 + 0 * 2;
+  assert.equal(hand, 1522);
+  assert.equal(stats.price_total, hand);
+  const price = kpiCards(stats, parsed.participants, { currency: parsed.config.currency }).find(
+    (card) => card.key === "price",
+  );
+  assert.equal(price.value, "¥1,522");
+  assert.equal(price.hint, "1 场无票价未计");
+
+  const usdFile = readFileSync(new URL("./fixtures/currency-usd.json", import.meta.url), "utf8");
+  const usdLoaded = await loadDashboard({
+    search: "?data=examples/sample.csv&config=tests/fixtures/currency-usd.json&today=2026-10-18",
+    storage: createMemoryStorage(),
+    fetch: async (url) => ok(String(url).includes("currency-usd") ? usdFile : csv),
+  });
+  const usdParsed = parseCsv(usdLoaded.csv, usdLoaded.config);
+  const usdStats = compute(usdParsed, usdLoaded.today);
+  assert.equal(usdStats.price_total, 871.5);
+  const usdPrice = kpiCards(usdStats, usdParsed.participants, {
+    currency: usdParsed.config.currency,
+  }).find((card) => card.key === "price");
+  assert.equal(usdPrice.value, "$872");
+
+  const bad = readFileSync(new URL("./fixtures/bad-price-mode.json", import.meta.url), "utf8");
+  await assert.rejects(
+    () =>
+      loadDashboard({
+        search: "?config=tests/fixtures/bad-price-mode.json",
+        storage: createMemoryStorage(),
+        fetch: async () => ok(bad),
+      }),
+    (error) => {
+      const text = messageFor(error);
+      assert.match(text, /配置没有通过校验/);
+      assert.match(text, /未知的 price_mode「heads」/);
+      assert.match(text, /只接受 total 或 per_person/);
+      assert.doesNotMatch(text, /按人头/);
       return true;
     },
   );

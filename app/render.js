@@ -102,7 +102,7 @@ function columnsOf(participants) {
 
 /**
  * 千分位用逗号，小数部分原样保留。
- * 72,533 与旧页面的 zh-CN 分组一致；871.5 这种小数留给以后的显示口径决定是否取整。
+ * 票价合计不要用这个函数直接上屏：合计见 formatPriceTotal。
  */
 export function formatNumber(value) {
   const number = Number(value);
@@ -112,6 +112,60 @@ export function formatNumber(value) {
   const [whole, fraction] = raw.split(".");
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${negative ? "-" : ""}${grouped}${fraction ? `.${fraction}` : ""}`;
+}
+
+/** 已知代码换成符号。CNY 和 JPY 都是 ¥。不在表里的代码原样返回。 */
+export const CURRENCY_SYMBOLS = Object.freeze({
+  CNY: "¥",
+  JPY: "¥",
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  HKD: "HK$",
+  TWD: "NT$",
+  KRW: "₩",
+  SGD: "S$",
+  AUD: "A$",
+  CAD: "C$",
+});
+
+export function currencyCode(currency) {
+  const text = String(currency ?? "").trim().toUpperCase();
+  return text || "CNY";
+}
+
+export function currencySymbol(currency) {
+  const code = currencyCode(currency);
+  if (Object.prototype.hasOwnProperty.call(CURRENCY_SYMBOLS, code)) return CURRENCY_SYMBOLS[code];
+  return code;
+}
+
+/**
+ * 四舍五入到整数，恰好一半时远离 0（2.5 → 3，-1.5 → -2）。
+ * 这是页面上「元」的显示规则，不是 together_pct 用的四舍六入五成双。
+ */
+export function roundHalfAwayFromZero(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  const rounded = Math.round(Math.abs(number));
+  if (rounded === 0) return 0;
+  return number < 0 ? -rounded : rounded;
+}
+
+/**
+ * 票价合计的显示：先四舍五入到整数元，再加币种符号。
+ * 已知符号紧贴数字（¥72,533）；不认识的代码后面空一格（XYZ 72,533）。
+ * 非有限数字显示为「—」。原始 price_total 不在这里改。
+ */
+export function formatPriceTotal(value, currency = "CNY") {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "\u2014";
+  const digits = formatNumber(roundHalfAwayFromZero(number));
+  const code = currencyCode(currency);
+  if (Object.prototype.hasOwnProperty.call(CURRENCY_SYMBOLS, code)) {
+    return `${CURRENCY_SYMBOLS[code]}${digits}`;
+  }
+  return `${code} ${digits}`;
 }
 
 export function typeColor(type, extraIndex = 0) {
@@ -212,9 +266,10 @@ export function subtitleText(stats) {
   return `${range} · 截至 ${today} · 共 ${artists} 组艺人`;
 }
 
-export function kpiCards(stats, participants) {
+export function kpiCards(stats, participants, options = {}) {
   const people = peopleOf(participants);
   const source = stats ?? {};
+  const currency = options.currency ?? options.config?.currency;
   const span = yearSpan(source);
   const cards = [
     {
@@ -240,11 +295,10 @@ export function kpiCards(stats, participants) {
       hint: `占 ${source.together_pct}%`,
     });
   }
-  const price = Number(source.price_total);
   cards.push({
     key: "price",
     label: "票价合计（表内原值）",
-    value: Number.isFinite(price) ? `¥${formatNumber(price)}` : "\u2014",
+    value: formatPriceTotal(source.price_total, currency),
     hint: `${source.no_price ?? 0} 场无票价未计`,
     price: true,
   });
@@ -796,7 +850,7 @@ export function render(stats, rows, participants, el, options = {}) {
     wrap.append(element("div", "sample", "当前显示的是仓库里的虚构示例，不是某个人的观演记录。"));
   }
 
-  const cards = kpiCards(stats, people);
+  const cards = kpiCards(stats, people, { currency: config.currency });
   const kpis = element("div", "grid k");
   kpis.style.setProperty("--kpi-cols", String(Math.min(6, Math.max(cards.length, 1))));
   for (const card of cards) {

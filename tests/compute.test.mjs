@@ -190,10 +190,13 @@ test("three participants count together and only-one generically", () => {
     ["日本", 1],
   ]);
 
+  // per_person = Σ(price × 该场 ✅ 人数)。空白票价、未来场、待定、未标记都不进合计。
+  // 2024-01-01 三人 100×3，02-01 一人 50，03-01 一人 80，05-01 一人 30。
   const perPerson = statsOf("compute-three.csv", { price_mode: "per_person" });
   const hand = 100 * 3 + 50 * 1 + 80 * 1 + 30 * 1;
   assert.equal(hand, 460);
   assert.equal(perPerson.price_total, hand);
+  assert.equal(perPerson.no_price, 1);
   assert.notEqual(perPerson.price_total, 100 * 2 + 50 + 80 + 30);
 });
 
@@ -408,14 +411,58 @@ test("top artists keep 20 after a code-point tie break", () => {
   );
 });
 
-test("unknown price_mode and a bad today are rejected", () => {
-  const csv = "date,event,artist\n2024-01-01,Show,Northwind\n";
+test("unknown price_mode is a Chinese error and is not treated as total", () => {
+  const csv = "date,event,artist,price,alice\n2024-01-01,Show,Northwind,10,✅\n";
   assert.throws(
     () => compute(parseCsv(csv, { price_mode: "heads" }), "2026-10-18"),
-    /price_mode/,
+    (error) => {
+      assert.match(error.message, /未知的 price_mode「heads」/);
+      assert.match(error.message, /只接受 total 或 per_person/);
+      return true;
+    },
   );
+  const parsed = parseCsv(csv);
+  parsed.config.priceMode = "by_head";
+  assert.throws(
+    () => compute(parsed, "2026-10-18"),
+    (error) => {
+      assert.match(error.message, /未知的 price_mode「by_head」/);
+      assert.doesNotMatch(error.message, /10/);
+      return true;
+    },
+  );
+  assert.equal(compute(parseCsv(csv), "2026-10-18").price_total, 10);
   assert.throws(() => compute(parseCsv(csv), "2026/10/18"), /today/);
   assert.throws(() => compute(parseCsv(csv), "2026-02-31"), /today/);
+});
+
+test("currency does not change the numeric total", () => {
+  const base = statsOf("compute-two.csv");
+  const jpy = statsOf("compute-two.csv", { currency: "JPY", price_mode: "total" });
+  const usd = statsOf("compute-two.csv", { currency: "usd" });
+  assert.equal(base.price_total, 871.5);
+  assert.equal(jpy.price_total, base.price_total);
+  assert.equal(usd.price_total, base.price_total);
+  assert.equal(jpy.no_price, base.no_price);
+  assert.equal(jpy.currency, undefined);
+  assert.equal(parseCsv(fixture("compute-two.csv"), { currency: "JPY" }).config.currency, "JPY");
+});
+
+test("python-style prices add into price_total and a blank stays uncounted", () => {
+  const csv = [
+    "date,event,artist,price,alice",
+    "2024-01-01,Dot,Northwind,.5,✅",
+    "2024-01-02,Trail,Paper Moon,5.,✅",
+    "2024-01-03,Exp,Glass Harbor,1e3,✅",
+    "2024-01-04,Sci,Lantern Club,1.5e1,✅",
+    "2024-01-05,Word,Copper Kite,免费,✅",
+  ].join("\n");
+  const stats = compute(parseCsv(csv), "2026-10-18");
+  const hand = 0.5 + 5 + 1000 + 15;
+  assert.equal(hand, 1020.5);
+  assert.equal(stats.price_total, hand);
+  assert.equal(stats.no_price, 1);
+  assert.equal(stats.total, 5);
 });
 
 test("a participant column that collides with a stat field is rejected", () => {

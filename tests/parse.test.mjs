@@ -8,6 +8,8 @@ import {
   ATTENDED_VALUES,
   ParseError,
   isAttended,
+  normalizeConfig,
+  parsePrice,
   splitArtists,
 } from "../app/schema.js";
 
@@ -407,6 +409,142 @@ test("the parser loads vendored PapaParse and does not touch the DOM", () => {
   assert.doesNotMatch(parseSource, /\bwindow\b/);
   assert.doesNotMatch(schemaSource, /\bdocument\b/);
   assert.doesNotMatch(schemaSource, /papaparse/);
+});
+
+test("prices accept the same finite literals as Python float()", () => {
+  const samples = [
+    "",
+    "   ",
+    ".5",
+    "5.",
+    "1e3",
+    "1E3",
+    "1.5e2",
+    "+.5",
+    "-.5",
+    "5.e1",
+    ".5e1",
+    "1_000",
+    "1_000.5",
+    "  1e3  ",
+    "+1",
+    "1.",
+    "1e-3",
+    "1E+2",
+    ".5e+1",
+    "5.e-1",
+    "1e",
+    "1e+",
+    "e3",
+    "inf",
+    "Inf",
+    "nan",
+    "NaN",
+    "Infinity",
+    "1e309",
+    "abc",
+    "1.2.3",
+    "+",
+    "1__0",
+    "_1",
+    "1_",
+    "1._5",
+    ".5_0",
+    "1e3_0",
+    "免费",
+    "1,000",
+    "+1.5",
+    "-.5e1",
+    "00.5",
+    "+5.",
+    "1.0e+3",
+    "\t.5\n",
+  ];
+  const py = `
+import json, math, struct, sys
+samples = json.load(sys.stdin)
+out = []
+for raw in samples:
+    try:
+        value = float(raw)
+    except Exception:
+        out.append(None)
+        continue
+    if not math.isfinite(value) or value == 0:
+        out.append(None if not math.isfinite(value) else "0")
+        continue
+    out.append(struct.pack(">d", value).hex())
+json.dump(out, sys.stdout)
+`;
+  const run = spawnSync("python3", ["-c", py], {
+    input: JSON.stringify(samples),
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const expected = JSON.parse(run.stdout);
+  assert.equal(expected.length, samples.length);
+  for (let i = 0; i < samples.length; i += 1) {
+    const parsed = parsePrice(samples[i]);
+    let actual = null;
+    if (parsed === 0) actual = "0";
+    else if (typeof parsed === "number") {
+      const buf = Buffer.alloc(8);
+      buf.writeDoubleBE(parsed);
+      actual = buf.toString("hex");
+    }
+    assert.equal(actual, expected[i], samples[i]);
+  }
+
+  assert.equal(parsePrice(".5"), 0.5);
+  assert.equal(parsePrice("5."), 5);
+  assert.equal(parsePrice("1e3"), 1000);
+  assert.equal(parsePrice("1_000.5"), 1000.5);
+  assert.equal(parsePrice("inf"), null);
+  assert.equal(parsePrice(""), null);
+});
+
+test("a csv cell written as .5, 5., or 1e3 becomes that price", () => {
+  const csv = [
+    "date,event,artist,price,alice",
+    "2024-01-01,Dot,Northwind,.5,✅",
+    "2024-01-02,Trail,Paper Moon,5.,✅",
+    "2024-01-03,Exp,Glass Harbor,1e3,✅",
+    "2024-01-04,Blank,Lantern Club,,✅",
+    "2024-01-05,Word,Copper Kite,免费,✅",
+  ].join("\n");
+  const rows = parseCsv(csv).rows;
+  assert.deepEqual(
+    rows.map((row) => row.price),
+    [0.5, 5, 1000, null, null],
+  );
+});
+
+test("price_mode and currency come from config, and an unknown mode is rejected", () => {
+  const csv = "date,event,artist,price\n2024-01-01,Show,Northwind,10\n";
+  assert.equal(parseCsv(csv).config.priceMode, "total");
+  assert.equal(parseCsv(csv).config.currency, "CNY");
+  assert.equal(parseCsv(csv, { price_mode: " per_person ", currency: " jpy " }).config.priceMode, "per_person");
+  assert.equal(parseCsv(csv, { currency: " jpy " }).config.currency, "JPY");
+  assert.equal(normalizeConfig({ price_mode: "", currency: "" }).priceMode, "total");
+  assert.equal(normalizeConfig({ price_mode: "", currency: "" }).currency, "CNY");
+
+  assert.throws(
+    () => parseCsv(csv, { price_mode: "heads" }),
+    (error) => {
+      assert.ok(error instanceof ParseError);
+      assert.equal(error.errors[0].code, "bad_price_mode");
+      assert.match(error.message, /未知的 price_mode「heads」/);
+      assert.match(error.message, /只接受 total 或 per_person/);
+      return true;
+    },
+  );
+  assert.throws(
+    () => normalizeConfig({ price_mode: 1 }),
+    (error) => {
+      assert.match(error.message, /price_mode 必须是字符串/);
+      return true;
+    },
+  );
 });
 
 test("CLI prints the row count and participant columns", () => {

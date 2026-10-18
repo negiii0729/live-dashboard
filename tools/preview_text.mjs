@@ -25,7 +25,7 @@ import {
 const usage = `用法: node tools/preview_text.mjs <file.csv> --today YYYY-MM-DD [--config config.json]
 
 按页面上的口径打印 KPI、图表用到的数字、谁去了的选项和表格。
-不写死参与者名字。票价合计是 compute 的 price_total，不打印按人头乘过的另一套数。
+不写死参与者名字。票价合计的数字是 compute 的 price_total，卡片上再四舍五入到整数并加上币种符号。
 --today 要和对照用的截止日期相同。不要把真实 CSV 提交进这个仓库。`;
 
 const args = process.argv.slice(2);
@@ -91,7 +91,7 @@ function previewText(parsed, stats, options = {}) {
   lines.push(`参与者 ${people.map((person) => person.label).join("、") || "（无）"}`);
   lines.push(subtitleText(stats));
   lines.push("");
-  for (const card of kpiCards(stats, people)) {
+  for (const card of kpiCards(stats, people, { currency: options.config?.currency })) {
     lines.push(`${card.label}\t${card.value}`);
     lines.push(`\t${card.hint}`);
   }

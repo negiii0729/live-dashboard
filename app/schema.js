@@ -88,12 +88,18 @@ export function parseDate(value) {
   return { ok: true, date: text };
 }
 
-/** 空或无法解析时返回 null，表示「无票价」，不算校验错误。 */
+/**
+ * 与 Python float() 的有限数字对齐：`.5`、`5.`、`1e3`、`1_000.5` 都算票价。
+ * 空单元格、inf / nan、以及 float() 会拒绝的文本返回 null，表示「无票价」，不算校验错误。
+ */
+const PYTHON_FINITE_FLOAT =
+  /^[+-]?(?:(?:\d(?:_?\d)*)(?:\.(?:\d(?:_?\d)*)?)?|\.\d(?:_?\d)*)(?:[eE][+-]?\d(?:_?\d)*)?$/;
+
 export function parsePrice(value) {
   const text = String(value ?? "").trim();
   if (text === "") return null;
-  if (!/^[+-]?\d+(?:\.\d+)?$/.test(text)) return null;
-  const number = Number(text);
+  if (!PYTHON_FINITE_FLOAT.test(text)) return null;
+  const number = Number(text.replaceAll("_", ""));
   return Number.isFinite(number) ? number : null;
 }
 
@@ -198,24 +204,62 @@ export function normalizeConfig(input = {}) {
   const aliasLabel =
     input.artist_aliases != null ? "artist_aliases" : "aliases";
 
-  let priceMode = "total";
-  if (input.price_mode != null && input.price_mode !== "") {
-    priceMode = String(input.price_mode);
-  }
-
   return {
     schema: 1,
     title: input.title == null ? "" : String(input.title),
     people: plainPeople(input.people),
-    priceMode,
-    currency:
-      input.currency == null || input.currency === ""
-        ? "CNY"
-        : String(input.currency),
+    priceMode: readPriceMode(input),
+    currency: readCurrency(input),
     defaultRegion:
       input.default_region == null ? null : String(input.default_region),
     artistAliases: plainAliases(aliasSource, aliasLabel),
   };
+}
+
+/** 缺省、null、空白都是 total。其他字符串直接报错，不改成 total。 */
+function readPriceMode(input) {
+  if (!Object.prototype.hasOwnProperty.call(input, "price_mode") || input.price_mode == null) {
+    return "total";
+  }
+  if (typeof input.price_mode !== "string") {
+    throw new ParseError([
+      {
+        line: null,
+        code: "bad_price_mode",
+        message: "price_mode 必须是字符串 total 或 per_person",
+      },
+    ]);
+  }
+  const priceMode = input.price_mode.trim();
+  if (priceMode === "") return "total";
+  if (priceMode !== "total" && priceMode !== "per_person") {
+    throw new ParseError([
+      {
+        line: null,
+        code: "bad_price_mode",
+        message: `未知的 price_mode「${priceMode}」，只接受 total 或 per_person`,
+      },
+    ]);
+  }
+  return priceMode;
+}
+
+/** 缺省是 CNY。只保存代码，不做汇率换算；大小写无关。 */
+function readCurrency(input) {
+  if (!Object.prototype.hasOwnProperty.call(input, "currency") || input.currency == null) {
+    return "CNY";
+  }
+  if (typeof input.currency !== "string") {
+    throw new ParseError([
+      {
+        line: null,
+        code: "bad_currency",
+        message: "currency 必须是字符串，例如 CNY",
+      },
+    ]);
+  }
+  const currency = input.currency.trim().toUpperCase();
+  return currency || "CNY";
 }
 
 /**
