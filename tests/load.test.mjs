@@ -475,6 +475,38 @@ test("a local import with ?config= loads that config for validation and for the 
   assert.match(importFn, /searchAfterImport|rememberImport/);
 });
 
+test("searchAfterImport keeps ?config= verbatim, including slashes", () => {
+  assert.equal(
+    searchAfterImport("?data=examples/sample.csv&config=examples/config.json&today=2026-10-18"),
+    "?config=examples/config.json&today=2026-10-18",
+  );
+  assert.equal(
+    searchAfterImport(
+      "?fixture=tests/fixtures/participants-3.csv&config=examples/dir/config.json&vault=vault.json",
+    ),
+    "?config=examples/dir/config.json",
+  );
+  assert.equal(
+    searchAfterImport("config=https://example.com/a/b.json&data=https://example.com/old.csv"),
+    "?config=https://example.com/a/b.json",
+  );
+  assert.equal(
+    searchAfterImport("?today=2026-10-18&config=examples/config.json"),
+    "?today=2026-10-18&config=examples/config.json",
+  );
+  assert.equal(searchAfterImport("?config=examples%2Fconfig.json&data=x"), "?config=examples%2Fconfig.json");
+  assert.equal(searchAfterImport("?data=only.csv"), "");
+  assert.equal(searchAfterImport(""), "");
+  assert.equal(searchAfterImport("?"), "");
+
+  const next = searchAfterImport("?config=examples/config.json&data=examples/sample.csv&fixture=a&vault=b");
+  assert.equal(next, "?config=examples/config.json");
+  assert.doesNotMatch(next, /%2F/);
+  const url = new URL(next, "http://127.0.0.1:8000/");
+  assert.equal(url.search, "?config=examples/config.json");
+  assert.equal(url.searchParams.get("config"), "examples/config.json");
+});
+
 test("csv file names and the loading sources stay generic", () => {
   assert.equal(csvFileNameOk("shows.csv"), true);
   assert.equal(csvFileNameOk("Shows.CSV"), true);

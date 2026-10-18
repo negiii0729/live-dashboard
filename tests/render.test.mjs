@@ -237,6 +237,9 @@ test("currency changes the symbol and leaves the rounded digits alone", () => {
   assert.equal(cny.value, "¥872");
   assert.equal(usd.value, "$872");
   assert.equal(unknown.value, "XYZ 872");
+  assert.equal(formatPriceTotal(1234, "xyz"), "XYZ 1,234");
+  assert.equal(formatPriceTotal(1234, " xyz "), "XYZ 1,234");
+  assert.equal(formatPriceTotal(1234, "   "), "¥1,234");
   assert.equal(jpy.hint, cny.hint);
 
   const none = ready("participants-0.csv");

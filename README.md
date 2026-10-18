@@ -114,14 +114,14 @@ python3 -m http.server
 
 网上能下载到的是密文。密码强度不够的话，别人可以慢慢试。这不是账号系统，服务器上也不核对密码。
 
-在本地做一份 vault。密码只放在环境变量里，用 `--password-env` 指定变量名，**不要写在命令后面**：
+在本地做一份 vault。密码只放在环境变量里，不要写在命令后面。`--password-env` 是可选项，用来指定读取密码的环境变量名；省略时默认是 `LIVE_PASSWORD`（`tools/encrypt_vault.py` 里该参数的默认值）。
 
 ```bash
 python3 -m pip install -r tools/requirements-vault.txt
 LIVE_PASSWORD='你的密码' python3 tools/encrypt_vault.py --csv data.csv --config config.json --out vault.json
 ```
 
-省略 `--config` 时，vault 里的 config 是 null。要换一个环境变量名：
+这条命令省略了 `--password-env`，密码从 `LIVE_PASSWORD` 读取。省略 `--config` 时，vault 里的 config 是 null。要改用别的环境变量名，再加上 `--password-env`：
 
 ```bash
 LIVE_DASHBOARD_PASSWORD='你的密码' python3 tools/encrypt_vault.py --csv data.csv --config config.json --out vault.json --password-env LIVE_DASHBOARD_PASSWORD
@@ -137,7 +137,12 @@ LIVE_DASHBOARD_PASSWORD='你的密码' python3 tools/encrypt_vault.py --csv data
 
 ## 自己部署
 
-可以把这个仓库 fork 出去，用 GitHub Pages 发布你自己的一份页面。仓库里的部署工作流会在推送到 `main` 时，用 GitHub 官方的 Pages actions 发布静态文件。Pages 的来源需要设为 GitHub Actions，这项由仓库管理员在设置里打开。
+可以把这个仓库 fork 出去，用 GitHub Pages 发布你自己的一份页面。Fork 之后有两项要在网页上自己打开，推送代码不会替你打开：
+
+1. **Actions。** 打开 fork 仓库的 **Actions** 标签页，按页面提示启用工作流。GitHub 对 fork 默认不跑 Actions。
+2. **Pages 来源。** 在仓库 Settings 的 Pages 里，把来源设为 **GitHub Actions**。
+
+部署工作流（`.github/workflows/deploy.yml`，名称是 Deploy GitHub Pages）会在推送到 `main` 时，用 GitHub 官方的 Pages actions 发布静态文件。同一份工作流写了 `workflow_dispatch:`，所以第一次发布可以手动跑：打开 **Actions** 标签页，选中 **Deploy GitHub Pages**，点 **Run workflow**，在分支上再点一次 **Run workflow**。
 
 页面和数据仍然分开。观演表不要放进这个代码仓库。
 
@@ -158,7 +163,7 @@ LIVE_DASHBOARD_PASSWORD='你的密码' python3 tools/encrypt_vault.py --csv data
 
 `price` 单元格和 Python `float()` 的有限数字同一套写法，所以 `.5`、`5.`、`1e3`、`1_000` 都能读入。空单元格、`inf`、`nan` 和读不懂的文本记为无票价。
 
-CNY 和 JPY 都显示 ¥，USD 是 $，另外还有 EUR、GBP、HKD、TWD、KRW、SGD、AUD、CAD。不在这张表里的代码会原样出现在数字前面。
+已知币种先去掉首尾空白再改成大写，然后换成符号，符号紧贴取整后的金额：CNY 和 JPY 是 ¥，USD 是 $，EUR 是 €，GBP 是 £，HKD 是 HK$，TWD 是 NT$，KRW 是 ₩，SGD 是 S$，AUD 是 A$，CAD 是 C$。例如 `¥1,234`。不在这张表里的代码同样去掉首尾空白并改成大写，再空一格写在金额前面；金额用逗号作千分位。币种写成 `xyz`、合计取整后是 1234 时，卡片显示 `XYZ 1,234`。空白的币种按默认 `CNY` 显示。
 
 ## 用自己的表对照数字
 
