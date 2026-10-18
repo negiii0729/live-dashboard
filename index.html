@@ -218,13 +218,13 @@
   <div class="wrap tools">
     <div class="bar" id="toolbar">
       <button type="button" id="pick-file">选择文件</button>
-      <input id="file-input" type="file" accept=".csv,text/csv" hidden>
+      <input id="file-input" type="file" accept=".csv,text/csv,.xlsx,.xls,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
       <button type="button" id="clear-data">清除数据</button>
-      <p id="source-label" class="hint">也可以把 CSV 拖进页面。</p>
+      <p id="source-label" class="hint">也可以把 CSV 或 Excel 拖进页面。</p>
     </div>
     <div id="guide" class="guide" hidden>
       <p>当前没有载入你自己的表，下面是一份虚构示例。</p>
-      <p>点「选择文件」，或把 CSV 拖进页面。表会留在这台浏览器里，刷新后还在。「清除数据」会删掉它，并回到这份示例。</p>
+      <p>点「选择文件」，或把 CSV、Excel（.xlsx / .xls）拖进页面。表会留在这台浏览器里，刷新后还在。「清除数据」会删掉它，并回到这份示例。</p>
       <p>也可以在地址后加上 ?data= 公开 CSV 链接，用 ?config= 附上配置，用 ?today=YYYY-MM-DD 指定截止日期。</p>
     </div>
   </div>
@@ -233,7 +233,7 @@
   <script src="./vendor/papaparse-5.7.0.min.js"></script>
   <script type="module">
     import { compute } from "./app/compute.js";
-    import { csvFileNameOk, loadDashboard, LoadError, messageFor } from "./app/load.js";
+    import { importFileNameOk, loadDashboard, messageFor, readImportFile } from "./app/load.js";
     import { parseCsv } from "./app/parse.js";
     import { render } from "./app/render.js";
     import { createBrowserStorage, createMemoryStorage } from "./app/storage.js";
@@ -245,6 +245,7 @@
     const fileInput = document.querySelector("#file-input");
     const pickButton = document.querySelector("#pick-file");
     const storage = openStorage();
+    let pageConfig = null;
 
     function openStorage() {
       try {
@@ -273,7 +274,7 @@
       }
       clearButton.disabled = !saved;
       if (failed || !loaded) {
-        sourceLabel.textContent = "没有把表格载入页面。也可以把 CSV 拖进页面。";
+        sourceLabel.textContent = "没有把表格载入页面。也可以把 CSV 或 Excel 拖进页面。";
         guide.hidden = false;
         return;
       }
@@ -287,7 +288,7 @@
       } else if (loaded.source === "fixture") {
         sourceLabel.textContent = "当前数据来自本站夹具。";
       } else {
-        sourceLabel.textContent = "当前是内置示例。也可以把 CSV 拖进页面。";
+        sourceLabel.textContent = "当前是内置示例。也可以把 CSV 或 Excel 拖进页面。";
       }
     }
 
@@ -304,6 +305,7 @@
           storage,
           sampleUrl: "examples/sample.csv",
         });
+        pageConfig = loaded.config;
         const parsed = parseCsv(loaded.csv, loaded.config);
         const stats = compute(parsed, loaded.today);
         render(stats, parsed.rows, parsed.participants, root, {
@@ -320,10 +322,8 @@
 
     async function importFile(file) {
       try {
-        if (!file) throw new LoadError("没有拿到文件。");
-        if (!csvFileNameOk(file.name)) throw new LoadError("请导入 CSV 文件。");
-        const csv = await file.text();
-        parseCsv(csv);
+        const csv = await readImportFile(file, { config: pageConfig });
+        parseCsv(csv, pageConfig);
         storage.write({ csv, name: file.name || "导入.csv" });
         rememberImport(new URL(location.href));
         await show(location.search);
@@ -375,9 +375,9 @@
       dragDepth = 0;
       document.body.classList.remove("is-drag");
       const files = [...(event.dataTransfer?.files ?? [])];
-      const file = files.find((item) => csvFileNameOk(item.name));
+      const file = files.find((item) => importFileNameOk(item.name));
       if (!file) {
-        showError("请把 CSV 文件拖进页面。");
+        showError("请把 CSV 或 Excel 文件拖进页面。");
         syncChrome(null, true);
         return;
       }

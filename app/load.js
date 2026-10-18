@@ -29,9 +29,61 @@ export function csvFileNameOk(name) {
   return /\.csv$/i.test(String(name));
 }
 
+export function excelFileNameOk(name) {
+  const text = String(name ?? "");
+  return /\.xlsx$/i.test(text) || /\.xls$/i.test(text);
+}
+
+export function importFileNameOk(name) {
+  if (!name) return true;
+  return csvFileNameOk(name) || excelFileNameOk(name);
+}
+
+/**
+ * CSV 直接读文本。Excel 才动态加载 app/xlsx.js，再由它加载 vendor 里的 SheetJS。
+ * @param {{ name?: string, text?: () => Promise<string>, arrayBuffer?: () => Promise<ArrayBuffer> }} file
+ * @param {{ config?: object | null, loadXlsxModule?: () => Promise<{ workbookToCsv: Function }>, loadXlsx?: () => Promise<object> }} [options]
+ */
+export async function readImportFile(file, options = {}) {
+  if (!file) throw new LoadError("没有拿到文件。");
+  const name = file.name || "";
+  if (excelFileNameOk(name)) {
+    const loadModule = options.loadXlsxModule ?? (() => import("./xlsx.js"));
+    let mod;
+    try {
+      mod = await loadModule();
+    } catch {
+      throw new LoadError("没有载入 Excel 解析库。");
+    }
+    const workbookToCsv = mod?.workbookToCsv ?? mod?.default?.workbookToCsv;
+    if (typeof workbookToCsv !== "function") {
+      throw new LoadError("没有载入 Excel 解析库。");
+    }
+    let bytes;
+    try {
+      bytes = await file.arrayBuffer();
+    } catch {
+      throw new LoadError("没有读到这个文件。");
+    }
+    return workbookToCsv(bytes, {
+      config: options.config ?? null,
+      loadXlsx: options.loadXlsx,
+    });
+  }
+  if (csvFileNameOk(name)) {
+    try {
+      return await file.text();
+    } catch {
+      throw new LoadError("没有读到这个文件。");
+    }
+  }
+  throw new LoadError("请导入 CSV 或 Excel（.xlsx / .xls）文件。");
+}
+
 export function messageFor(error) {
   if (error instanceof LoadError) return error.message;
   if (error?.name === "StorageError") return error.message;
+  if (error?.name === "WorkbookError") return error.message;
   if (error?.name === "ParseError") {
     const aboutConfig = error.errors?.some((item) => CONFIG_CODES.has(item.code));
     const lead = aboutConfig ? "配置没有通过校验。" : "这份 CSV 没有通过校验。";

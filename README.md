@@ -18,7 +18,7 @@ python3 -m http.server
 
 ## 载入自己的表
 
-1. **本地文件。** 点「选择文件」，或把 CSV 拖进页面。内容存在这台浏览器的 localStorage 里，刷新后还在。点「清除数据」会删掉它，页面回到示例。
+1. **本地文件。** 点「选择文件」，或把 CSV、Excel（`.xlsx` / `.xls`）拖进页面。Excel 只读第一个工作表，转成 CSV 后再走同一套校验；SheetJS 只在这时加载。内容存在这台浏览器的 localStorage 里，刷新后还在。点「清除数据」会删掉它，页面回到示例。
 2. **链接。** `?data=` 后面接公开 CSV 的地址。GitHub raw（`raw.githubusercontent.com`）和 Gist raw 会返回允许浏览器直接读取的响应头，可以这样打开，例如 `http://127.0.0.1:8000/?data=https://raw.githubusercontent.com/<user>/<repo>/main/shows.csv`。`?config=` 接一份 JSON 配置，显示名和别名会进入统计。`?today=YYYY-MM-DD` 指定截止日期；不写则用浏览器当天。
 
 `?data=` 和 `?fixture=` 都优先于浏览器里保存的表。没有这两项时才用已导入的文件。相对路径的 `?data=` 与 `?fixture=` 一样，只读本站文件。`?config=` 里的 `price_mode` 和 `currency` 会进入这次统计和票价卡片。
@@ -86,6 +86,7 @@ node tools/parity.mjs tests/fixtures/parity-sample.csv tests/fixtures/parity-sam
 | --- | --- | --- |
 | `echarts-5.5.1.min.js` | 5.5.1 | `echarts` 的 `dist/echarts.min.js` |
 | `papaparse-5.7.0.min.js` | 5.7.0 | `papaparse` 的 `papaparse.min.js` |
+| `xlsx-0.20.3.full.min.js` | 0.20.3 | SheetJS CE 的 `xlsx.full.min.js`（cdn.sheetjs.com，不是 npm 上停在 0.18.5 的 `xlsx`） |
 
 ## 持续集成与部署
 
