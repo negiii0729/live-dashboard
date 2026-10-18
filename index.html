@@ -260,7 +260,7 @@
   <script src="./vendor/papaparse-5.7.0.min.js"></script>
   <script type="module">
     import { compute } from "./app/compute.js";
-    import { fetchVaultDocument, importFileNameOk, loadDashboard, messageFor, readImportFile } from "./app/load.js";
+    import { describeLoadedSource, fetchVaultDocument, importFileNameOk, loadDashboard, loadQueryConfig, messageFor, readImportFile, searchAfterImport } from "./app/load.js";
     import { parseCsv } from "./app/parse.js";
     import { render } from "./app/render.js";
     import { createBrowserStorage, createMemoryStorage } from "./app/storage.js";
@@ -292,8 +292,7 @@
       note.setAttribute("role", "alert");
       note.textContent = text;
       root.append(note);
-      const params = new URLSearchParams(location.search);
-      guide.hidden = params.has("vault") && !params.has("data");
+      guide.hidden = true;
     }
 
     function syncChrome(loaded, failed) {
@@ -324,29 +323,21 @@
         return;
       }
       if (failed || !loaded) {
-        sourceLabel.textContent = "没有把表格载入页面。也可以把 CSV 或 Excel 拖进页面。";
-        guide.hidden = false;
+        const notice = describeLoadedSource(null);
+        sourceLabel.textContent = notice.label;
+        guide.hidden = true;
         return;
       }
-      guide.hidden = loaded.source !== "sample";
-      if (loaded.source === "import") {
-        sourceLabel.textContent = loaded.name
-          ? `已导入 ${loaded.name}，保存在这台浏览器里。`
-          : "已导入的表格保存在这台浏览器里。";
-      } else if (loaded.source === "remote") {
-        sourceLabel.textContent = "当前数据来自 ?data= 链接。";
-      } else if (loaded.source === "fixture") {
-        sourceLabel.textContent = "当前数据来自本站夹具。";
-      } else {
-        sourceLabel.textContent = "当前是内置示例。也可以把 CSV 或 Excel 拖进页面。";
-      }
+      const notice = describeLoadedSource(loaded);
+      guide.hidden = !notice.showGuide;
+      sourceLabel.textContent = notice.label;
     }
 
-    function rememberImport(url) {
-      url.searchParams.delete("data");
-      url.searchParams.delete("fixture");
-      url.searchParams.delete("vault");
-      history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+    function rememberImport(search) {
+      const nextSearch = searchAfterImport(search);
+      const url = new URL(location.href);
+      history.replaceState(null, "", `${url.pathname}${nextSearch}${url.hash}`);
+      return nextSearch;
     }
 
     function showPasswordForm(message, options = {}) {
@@ -515,11 +506,16 @@
 
     async function importFile(file) {
       try {
-        const csv = await readImportFile(file, { config: pageConfig });
-        parseCsv(csv, pageConfig);
+        const params = new URLSearchParams(location.search);
+        const config = params.has("config")
+          ? await loadQueryConfig({ search: location.search })
+          : pageConfig;
+        const csv = await readImportFile(file, { config });
+        parseCsv(csv, config);
         storage.write({ csv, name: file.name || "导入.csv" });
-        rememberImport(new URL(location.href));
-        await show(location.search);
+        pageConfig = config;
+        const nextSearch = rememberImport(location.search);
+        await show(nextSearch);
       } catch (error) {
         showError(messageFor(error));
         syncChrome(null, true);

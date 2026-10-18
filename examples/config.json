@@ -6,5 +6,8 @@
     { "column": "bob", "label": "Bob" }
   ],
   "price_mode": "per_person",
-  "currency": "CNY"
+  "currency": "CNY",
+  "artist_aliases": {
+    "Glass Harbor": "Paper Moon"
+  }
 }
