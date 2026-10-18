@@ -12,7 +12,9 @@ import {
   cityOptions,
   footnote,
   formatNumber,
+  hasTypeCounts,
   kpiCards,
+  pieSeriesLayout,
   listDetail,
   matchesWho,
   render,
@@ -304,6 +306,44 @@ test("chart series use the computed numbers and color cities by region", () => {
   assert.equal(charts.venue.series[0].data[0], two.stats.venue.at(-1)[1]);
 });
 
+test("a csv without a type column does not draw three empty pie slices", () => {
+  const csv = "date,event,artist,alice\n2024-01-01,Show,Northwind,✅\n2024-02-02,Other,Paper Moon,✅\n";
+  const result = parseCsv(csv);
+  const stats = compute(result, today);
+  assert.equal(hasTypeCounts(stats), false);
+  assert.equal(stats.type_cnt["ワンマン"], 0);
+  assert.equal(stats.type_cnt["対バン"], 0);
+  assert.equal(stats.type_cnt["フェス"], 0);
+  const charts = buildCharts(stats, result.rows, result.participants);
+  assert.equal(charts.type, null);
+  const source = readFileSync(new URL("../app/render.js", import.meta.url), "utf8");
+  assert.match(source, /无类型数据/);
+
+  const withType = ready("compute-two.csv");
+  assert.equal(hasTypeCounts(withType.stats), true);
+  assert.ok(buildCharts(withType.stats, withType.parsed.rows, withType.parsed.participants).type);
+});
+
+test("a phone-width pie keeps its labels inside the chart", () => {
+  const wide = pieSeriesLayout(800);
+  const phone = pieSeriesLayout(390);
+  const outer = (layout) => Number(String(layout.radius[1]).replace("%", ""));
+  assert.ok(outer(phone) < outer(wide));
+  assert.ok(outer(phone) <= 40);
+  assert.equal(phone.label.overflow, "break");
+  assert.equal(phone.label.alignTo, "edge");
+  assert.equal(phone.label.bleedMargin, 0);
+
+  const two = ready("compute-two.csv");
+  const charts = buildCharts(two.stats, two.parsed.rows, two.parsed.participants, { width: 390 });
+  assert.deepEqual(charts.type.series[0].radius, phone.radius);
+  assert.equal(charts.type.series[0].label.alignTo, "edge");
+  assert.deepEqual(
+    charts.type.series[0].data.map((item) => item.value),
+    [4, 3, 4],
+  );
+});
+
 test("render rejects a missing container before touching the page", () => {
   const host = { appendChild() {} };
   assert.throws(() => render({}, [], [], null), /容器/);
@@ -317,6 +357,10 @@ test("the page and the renderer stay generic", () => {
   assert.match(html, /examples\/sample\.csv/);
   assert.match(html, /render\(stats, parsed\.rows, parsed\.participants/);
   assert.match(html, /<script type="module">/);
+  assert.match(html, /选择文件/);
+  assert.match(html, /清除数据/);
+  assert.match(html, /loaded\.source === "sample"/);
+  assert.doesNotMatch(html, /sample\s*:\s*true/);
   assert.doesNotMatch(html, /https?:\/\//);
   assert.doesNotMatch(html, /按人头/);
   assert.doesNotMatch(source, /按人头/);
