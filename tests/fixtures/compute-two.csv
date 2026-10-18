@@ -1,0 +1,20 @@
+no,date,event,artist,venue,city,type,price,alice,bob
+1,2017-11-12,First Light,Northwind	,North Pier,杭州,ワンマン,200,✅,✅
+2,2018-03-03,Harbor Night,"/Paper Moon
+／Glass Harbor
+Paper Moon",Cedar Room,杭州,対バン,150.5,✅,✅
+3,2018-06-01,Bay Fest,Northwind,Lantern Hall,東京,フェス,80,✅,
+4,2019-01-15,Glass Solo,Glass Harbor,Glass Dome,香港,ワンマン,60,,✅
+5,2019-08-08,Twin Bill,"Amberline
+Brightvale",North Pier,杭州,フェス,300,✅,✅
+6,2020-02-02,Amber Fest,Amberline,Amber Court,上海,フェス,10.5,✅,
+7,2020-05-05,Bright Solo,Brightvale,Paper Stage,上海,ワンマン,10.5,,✅
+8,2021-04-04,Amber Split,Amberline,Amber Court,上海,対バン,,✅,✅
+9,2022-07-07,Missed Night,Copper Kite,Copper Yard,大阪,フェス,999,,
+10,2023-09-09,Moss Fest,Brightvale,Moss Theater,台北,フェス,40,✅,
+11,,Undated Lantern,Lantern Club,Ink Warehouse,上海,ワンマン,70,✅,✅
+12,2026-12-01,Winter Upcoming,Quartz Owls,Quartz Room,上海,フェス,500,✅,✅
+13,2026-10-18,Today Dock,Northwind,Velvet Dock,東京,対バン,20,,✅
+14,2024-01-01,Unmarked Finch,Zebra Finch,Blue Hall,深圳,ワンマン,15,,
+15,2025-05-05,Double Finch,"Zebra Finch
+Zebra Finch",Harbor Shed,北京,ワンマン,0,✅,✅
