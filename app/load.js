@@ -1,10 +1,13 @@
 /**
  * 决定这一次打开页面用哪份表。
- * 优先级：?data= ，?fixture= ，浏览器里保存的导入，内置示例。
+ * loadDashboard 的优先级：?data= ，?fixture= ，浏览器里保存的导入，内置示例。
+ * ?vault= 不在 loadDashboard 里解密。页面用 fetchVaultDocument 取 vault.json，
+ * 再在本地解开。地址里同时有 ?data= 和 ?vault= 时，仍走 ?data=。
  * ?config= 和 ?today= 套在选中的表上。示例与否只看数据来源，不另设开关。
  */
 
 import { ParseError, normalizeConfig, parseDate } from "./schema.js";
+import { VaultError, parseVault } from "./vault.js";
 
 export class LoadError extends Error {
   constructor(message, extra = {}) {
@@ -81,7 +84,7 @@ export async function readImportFile(file, options = {}) {
 }
 
 export function messageFor(error) {
-  if (error instanceof LoadError) return error.message;
+  if (error instanceof LoadError || error instanceof VaultError) return error.message;
   if (error?.name === "StorageError") return error.message;
   if (error?.name === "WorkbookError") return error.message;
   if (error?.name === "ParseError") {
@@ -130,18 +133,21 @@ export function resolveResource(value, role) {
 function emptyMessage(role) {
   if (role === "data") return "?data= 后面没有地址。";
   if (role === "config") return "?config= 后面没有地址。";
+  if (role === "vault") return "?vault= 后面没有地址。";
   if (role === "today") return "?today= 后面没有日期。";
   return "fixture 后面没有路径。";
 }
 
 function schemeMessage(role) {
   if (role === "config") return "配置链接只接受 http、https，或本站相对路径。";
+  if (role === "vault") return "加密数据的链接只接受 http、https，或本站相对路径。";
   return "数据链接只接受 http、https，或本站相对路径。";
 }
 
 function relativeMessage(role) {
   if (role === "fixture") return "fixture 只接受本站上的相对路径。";
   if (role === "config") return "配置的相对路径不能越出本站。";
+  if (role === "vault") return "加密数据的相对路径不能越出本站。";
   return "数据的相对路径不能越出本站。";
 }
 
@@ -178,6 +184,7 @@ function networkMessage(role) {
   if (role === "config") return "配置链接无法读取：浏览器拦截了跨域请求。";
   if (role === "fixture") return "没有读到这个夹具：浏览器拦截了请求。";
   if (role === "sample") return "没有读到示例数据。";
+  if (role === "vault") return "加密数据无法读取：浏览器拦截了跨域请求。";
   return "数据链接无法读取：浏览器拦截了跨域请求。请换一个允许网页直接读取的公开 CSV，例如 GitHub 上的 raw 文件。";
 }
 
@@ -186,12 +193,14 @@ function httpMessage(role, status) {
     if (role === "config") return "没有找到这份配置（HTTP 404）。请检查 ?config= 的地址。";
     if (role === "fixture") return "没有找到这个夹具（HTTP 404）。";
     if (role === "sample") return "没有找到示例数据（HTTP 404）。";
+    if (role === "vault") return "没有找到这份加密数据（HTTP 404）。请检查 ?vault= 的地址。";
     return "没有找到这份数据（HTTP 404）。请检查 ?data= 的地址。";
   }
   const code = status ? `（HTTP ${status}）` : "";
   if (role === "config") return `读取配置失败${code}。`;
   if (role === "fixture") return `读取夹具失败${code}。`;
   if (role === "sample") return `读取示例数据失败${code}。`;
+  if (role === "vault") return `读取加密数据失败${code}。`;
   return `读取数据失败${code}。`;
 }
 
@@ -277,4 +286,32 @@ export async function loadDashboard(options = {}) {
 
   const csv = await fetchText(fetchImpl, { url: sampleUrl, remote: false }, "sample");
   return pack("sample", { csv, config, today, name: sampleUrl });
+}
+
+/**
+ * 只获取 ?vault= 指向的文件，并检查它是不是本工具认识的 vault。
+ * 不接收密码，请求里也只有这个地址（以及可选的 ?config=）。
+ */
+export async function fetchVaultDocument(options = {}) {
+  const params = new URLSearchParams(String(options.search ?? "").replace(/^\?/, ""));
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const today = resolveToday(params.has("today") ? params.get("today") : null);
+
+  let queryConfig = null;
+  const hasQueryConfig = params.has("config");
+  if (hasQueryConfig) {
+    const target = resolveResource(params.get("config"), "config");
+    queryConfig = parseConfigText(await fetchText(fetchImpl, target, "config"));
+  }
+
+  const target = resolveResource(params.has("vault") ? params.get("vault") : "", "vault");
+  const text = await fetchText(fetchImpl, target, "vault");
+  return {
+    url: target.url,
+    remote: target.remote,
+    vault: parseVault(text),
+    today,
+    queryConfig,
+    hasQueryConfig,
+  };
 }

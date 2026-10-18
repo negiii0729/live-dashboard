@@ -46,6 +46,29 @@ python3 -m http.server
 
 `?fixture=` 仍用于临时查看仓库里的虚构夹具，只接受本站相对路径，例如 `http://127.0.0.1:8000/?fixture=tests/fixtures/participants-3.csv`。这不是正式导入，刷新后也不会写进 localStorage。
 
+## 加密链接
+
+`?vault=` 指向一份 `vault.json`。页面先把这个文件取下来，再显示密码框。密码用 WebCrypto 在本地派生密钥并解密，然后走和导入明文 CSV 同一条解析、计算、绘制流程。地址里同时有 `?data=` 时，仍按公开 CSV 打开，不进入密码框。
+
+密码不会放进任何请求。浏览器只请求 vault 的地址，以及可选的 `?config=`。勾选「记住密码」后，密码存在这台浏览器的 localStorage 里，刷新不用再输。点「清除数据」会删掉已导入的表，也会删掉记住的密码。
+
+这是浅防：没有账号，也没有服务器上的密码校验，拦不住反复试密码。记住的密码以明文留在本机浏览器里。
+
+在本地做一份 vault（密码不要写在命令后面，只放在环境变量里）：
+
+```bash
+python3 -m pip install -r tools/requirements-vault.txt
+LIVE_PASSWORD='你的密码' python3 tools/encrypt_vault.py --csv data.csv --config config.json --out vault.json
+```
+
+省略 `--config` 时，vault 里的 config 是 null。要换一个环境变量名：
+
+```bash
+LIVE_DASHBOARD_PASSWORD='你的密码' python3 tools/encrypt_vault.py --csv data.csv --config config.json --out vault.json --password-env LIVE_DASHBOARD_PASSWORD
+```
+
+加密是 PBKDF2-SHA256（至少 310000 次，随机 16 字节 salt）派生 AES-256-GCM 密钥，IV 为随机 12 字节。`vault.json` 只有版本、算法、迭代次数、salt、IV 和密文。CI 不安装 `cryptography`；`tests/test_encrypt_vault.py` 在没装这个包时会跳过。
+
 ## 用自己的表对照数字
 
 不要把真实观演表提交进这个仓库。把 CSV 放在仓库外，再跑：

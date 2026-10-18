@@ -1,2 +1,5 @@
 tests/fixtures/artists-multiline.csv text eol=crlf
 tests/fixtures/bom-crlf-upper.csv text eol=crlf
+tests/fixtures/vault-source.csv text eol=lf
+tests/fixtures/vault-source.config.json text eol=lf
+tests/fixtures/vault-test.json text eol=lf

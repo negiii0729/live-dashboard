@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "title": "Fictional Vault Desk",
+  "people": [
+    { "column": "alice", "label": "Alice" },
+    { "column": "bob", "label": "Bob" }
+  ],
+  "price_mode": "total",
+  "currency": "CNY",
+  "aliases": {
+    "Northwind": "North Wind",
+    "Glass Harbor": "玻璃港"
+  }
+}
