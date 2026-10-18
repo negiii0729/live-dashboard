@@ -200,6 +200,33 @@
       border-radius: 12px;
     }
 
+    .vault-card { max-width: 520px; }
+
+    .vault-form {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 10px;
+    }
+
+    .vault-form label { color: var(--mut); font-size: 12px; }
+
+    .vault-form input[type="password"] { flex: none; width: 100%; min-width: 0; }
+
+    .remember {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--txt);
+      font-size: 13px;
+    }
+
+    .remember input { flex: none; width: auto; min-width: 0; }
+
+    .vault-form .note { margin: 0; }
+
+    .vault-error { color: #ffd2dc; white-space: pre-wrap; font-size: 13px; margin: 0; }
+
     @media (max-width: 900px) {
       .k { grid-template-columns: repeat(2, 1fr); }
       .g2, .g3 { grid-template-columns: 1fr; }
@@ -225,7 +252,7 @@
     <div id="guide" class="guide" hidden>
       <p>当前没有载入你自己的表，下面是一份虚构示例。</p>
       <p>点「选择文件」，或把 CSV、Excel（.xlsx / .xls）拖进页面。表会留在这台浏览器里，刷新后还在。「清除数据」会删掉它，并回到这份示例。</p>
-      <p>也可以在地址后加上 ?data= 公开 CSV 链接，用 ?config= 附上配置，用 ?today=YYYY-MM-DD 指定截止日期。</p>
+      <p>也可以在地址后加上 ?data= 公开 CSV 链接，用 ?config= 附上配置，用 ?today=YYYY-MM-DD 指定截止日期。加密数据用 ?vault= 指向 vault.json，在页面里输入密码。</p>
     </div>
   </div>
   <div id="dashboard"><p class="boot">正在载入。</p></div>
@@ -233,10 +260,11 @@
   <script src="./vendor/papaparse-5.7.0.min.js"></script>
   <script type="module">
     import { compute } from "./app/compute.js";
-    import { importFileNameOk, loadDashboard, messageFor, readImportFile } from "./app/load.js";
+    import { fetchVaultDocument, importFileNameOk, loadDashboard, messageFor, readImportFile } from "./app/load.js";
     import { parseCsv } from "./app/parse.js";
     import { render } from "./app/render.js";
     import { createBrowserStorage, createMemoryStorage } from "./app/storage.js";
+    import { decryptVault } from "./app/vault.js";
 
     const root = document.querySelector("#dashboard");
     const guide = document.querySelector("#guide");
@@ -246,6 +274,8 @@
     const pickButton = document.querySelector("#pick-file");
     const storage = openStorage();
     let pageConfig = null;
+    let vaultDoc = null;
+    let vaultAttempt = 0;
 
     function openStorage() {
       try {
@@ -262,7 +292,8 @@
       note.setAttribute("role", "alert");
       note.textContent = text;
       root.append(note);
-      guide.hidden = false;
+      const params = new URLSearchParams(location.search);
+      guide.hidden = params.has("vault") && !params.has("data");
     }
 
     function syncChrome(loaded, failed) {
@@ -272,7 +303,26 @@
       } catch {
         saved = null;
       }
-      clearButton.disabled = !saved;
+      let remembered = null;
+      try {
+        remembered = storage.readVaultPassword();
+      } catch {
+        remembered = null;
+      }
+      const params = new URLSearchParams(location.search);
+      const vaultMode = params.has("vault") && !params.has("data");
+      clearButton.disabled = !saved && !remembered && loaded?.source !== "vault";
+      if (vaultMode) {
+        guide.hidden = true;
+        if (loaded?.source === "vault" && !failed) {
+          sourceLabel.textContent = "当前数据来自加密链接，已在这台浏览器里解开。";
+        } else if (vaultDoc) {
+          sourceLabel.textContent = "当前链接是加密数据。输入密码后在本地解开。";
+        } else {
+          sourceLabel.textContent = "加密数据没有载入。";
+        }
+        return;
+      }
       if (failed || !loaded) {
         sourceLabel.textContent = "没有把表格载入页面。也可以把 CSV 或 Excel 拖进页面。";
         guide.hidden = false;
@@ -295,10 +345,136 @@
     function rememberImport(url) {
       url.searchParams.delete("data");
       url.searchParams.delete("fixture");
+      url.searchParams.delete("vault");
       history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     }
 
+    function showPasswordForm(message, options = {}) {
+      const remember = options.remember === true;
+      const password = typeof options.password === "string" ? options.password : "";
+      root.replaceChildren();
+      document.title = "Live 观演记录";
+      const wrap = document.createElement("div");
+      wrap.className = "wrap";
+      const form = document.createElement("form");
+      form.className = "card vault-card vault-form";
+      form.id = "vault-form";
+      form.method = "post";
+      form.action = "";
+      const title = document.createElement("h2");
+      title.textContent = "输入密码";
+      const lead = document.createElement("p");
+      lead.className = "note";
+      lead.textContent = "这份观演数据已加密。密码只在这台浏览器里解开，不会随网络请求发送。";
+      const label = document.createElement("label");
+      label.htmlFor = "vault-password";
+      label.textContent = "密码";
+      const input = document.createElement("input");
+      input.id = "vault-password";
+      input.type = "password";
+      input.autocomplete = "current-password";
+      input.value = password;
+      const rememberLabel = document.createElement("label");
+      rememberLabel.className = "remember";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.id = "vault-remember";
+      checkbox.checked = remember;
+      rememberLabel.append(checkbox, document.createTextNode("记住密码"));
+      const hint = document.createElement("p");
+      hint.className = "note";
+      hint.textContent = "勾选后，刷新不用再输。密码存在这台浏览器里，「清除数据」会一并删掉。";
+      const alert = document.createElement("p");
+      alert.className = "vault-error";
+      alert.id = "vault-error";
+      alert.setAttribute("role", "alert");
+      if (message) alert.textContent = message;
+      else alert.hidden = true;
+      const button = document.createElement("button");
+      button.type = "submit";
+      button.id = "vault-open";
+      button.textContent = "打开";
+      form.append(title, lead, label, input, rememberLabel, hint, alert, button);
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        if (!vaultDoc) return;
+        button.disabled = true;
+        input.disabled = true;
+        checkbox.disabled = true;
+        button.textContent = "正在解密…";
+        void unlockVault(input.value, checkbox.checked);
+      });
+      wrap.append(form);
+      root.append(wrap);
+      syncChrome(null, true);
+      input.focus();
+      if (message) input.select();
+    }
+
+    function presentVault(opened) {
+      const config = vaultDoc.hasQueryConfig ? vaultDoc.queryConfig : opened.config;
+      pageConfig = config;
+      const parsed = parseCsv(opened.csv, config);
+      const stats = compute(parsed, vaultDoc.today);
+      render(stats, parsed.rows, parsed.participants, root, {
+        title: parsed.config.title,
+        config: parsed.config,
+        sample: false,
+      });
+      syncChrome({ source: "vault", sample: false, name: vaultDoc.url }, false);
+    }
+
+    async function unlockVault(password, remember) {
+      const attempt = ++vaultAttempt;
+      try {
+        const opened = await decryptVault(vaultDoc.vault, password, globalThis.crypto);
+        if (attempt !== vaultAttempt || !vaultDoc) return;
+        presentVault(opened);
+        if (attempt !== vaultAttempt) return;
+        if (remember) storage.writeVaultPassword({ url: vaultDoc.url, password });
+        else storage.clearVaultPassword();
+      } catch (error) {
+        if (attempt !== vaultAttempt) return;
+        if (error?.name === "VaultError") {
+          showPasswordForm(messageFor(error), { remember, password });
+          return;
+        }
+        showError(messageFor(error));
+        syncChrome(null, true);
+      }
+    }
+
+    async function showVault(search) {
+      const attempt = ++vaultAttempt;
+      let doc;
+      try {
+        doc = await fetchVaultDocument({ search });
+      } catch (error) {
+        if (attempt !== vaultAttempt) return;
+        vaultDoc = null;
+        showError(messageFor(error));
+        syncChrome(null, true);
+        return;
+      }
+      if (attempt !== vaultAttempt) return;
+      vaultDoc = doc;
+      const saved = storage.readVaultPassword();
+      if (saved && saved.url === vaultDoc.url) {
+        const note = root.querySelector(".boot");
+        if (note) note.textContent = "正在解密…";
+        await unlockVault(saved.password, true);
+        return;
+      }
+      showPasswordForm(null, { remember: false, password: "" });
+    }
+
     async function show(search) {
+      const params = new URLSearchParams(String(search ?? "").replace(/^\?/, ""));
+      if (params.has("vault") && !params.has("data")) {
+        await showVault(search);
+        return;
+      }
+      vaultDoc = null;
       try {
         const loaded = await loadDashboard({
           search,
@@ -340,10 +516,16 @@
       if (file) void importFile(file);
     });
     clearButton.addEventListener("click", () => {
+      vaultAttempt += 1;
       try {
         storage.clear();
       } catch (error) {
         showError(messageFor(error));
+        return;
+      }
+      const params = new URLSearchParams(location.search);
+      if (params.has("vault") && !params.has("data") && vaultDoc) {
+        showPasswordForm(null, { remember: false, password: "" });
         return;
       }
       void show(location.search);

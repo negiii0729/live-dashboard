@@ -23,3 +23,6 @@ jobs:
 
       - name: Run tests
         run: node --test
+
+      - name: Run vault encrypt tests
+        run: python3 -m unittest tests/test_encrypt_vault.py
