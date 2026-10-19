@@ -1,0 +1,12 @@
+{
+  "name": "live-dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "description": "通用的观演记录网页",
+  "scripts": {
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
+  }
+}
