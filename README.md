@@ -202,4 +202,23 @@ node tools/parity.mjs tests/fixtures/parity-sample.csv tests/fixtures/parity-sam
 
 ## 持续集成与部署
 
-拉取请求会运行 CI，不限目标分支：核对 vendor 文件的 sha256 是否与 `VERSIONS.md` 一致，执行 `node --test`，并先安装 `tools/requirements-vault.txt` 再跑 `tests/test_encrypt_vault.py`。本机没装 `cryptography` 时，那一组测试会跳过。
+拉取请求会运行 CI，不限目标分支：核对 vendor 文件的 sha256 是否与 `VERSIONS.md` 一致，执行 `node --test`，并先安装 `tools/requirements-vault.txt` 再跑 `tests/test_encrypt_vault.py`。本机没装 `cryptography` 时，那一组测试会跳过。CI 暂不运行下面的 Playwright 冒烟测试。
+
+## 端到端冒烟
+
+`tests/e2e/` 里是无头浏览器的冒烟用例。只使用仓库里的虚构示例和夹具，不读取真实观演数据，也不读取任何密码环境变量。
+
+先在仓库根目录安装依赖和 Chromium：
+
+```bash
+npm i
+npx playwright install chromium
+```
+
+再运行测试：
+
+```bash
+npx playwright test
+```
+
+`playwright.config.ts` 会用 `python3 -m http.server 4173 --bind 127.0.0.1` 自动启动本地静态服，地址是 `http://127.0.0.1:4173`，测试结束后自动关闭。用例会检查不带参数时首页能加载，以及用 `?vault=tests/fixtures/vault-test.json` 打开后输入错误密码会显示「密码不对」。
